@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -18,7 +19,11 @@ export default function Inicio() {
       <Painel style={styles.menu}>
         <Botao titulo="Nova partida" detalhe="em breve" />
         <Botao titulo="Continuar partida" detalhe="nenhuma partida salva" />
-        <Botao titulo="Personagens" detalhe="em breve" />
+        <Botao
+          titulo="Consultar personagens"
+          detalhe="atributos, Poder e habilidades"
+          onPress={() => router.push('/personagens')}
+        />
       </Painel>
 
       <Text style={styles.rodape}>Métodos Ágeis · Ibmec 2026.2</Text>
