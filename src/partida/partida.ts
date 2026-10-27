@@ -17,10 +17,25 @@ export type Jogador = {
   time: string[]; // códigos dos personagens
 };
 
+// Como cada personagem saiu do leilão.
+export type Venda = {
+  codigo: string;
+  jogadorId: number | null; // null = foi para a repescagem
+  valor: number;
+  tipo: 'lance' | 'repescagem' | 'obrigatorio';
+  // Rolagens de dado do desempate, quando houve (jogadorId → resultados).
+  dados?: Record<number, number[]>;
+};
+
 export type Partida = {
   jogadores: Jogador[];
   // Personagens sorteados, na ordem em que vão a leilão.
   fila: string[];
+  // Posição na fila do personagem em leilão agora.
+  indiceAtual: number;
+  // Personagens sem lance aguardando a repescagem (no máximo 3).
+  repescagem: string[];
+  vendas: Venda[];
 };
 
 let partida: Partida | null = null;
@@ -69,7 +84,7 @@ export function criarPartida(nomes: string[]): Partida {
     time: [],
   }));
   const fila = embaralhar(PERSONAGENS.map((p) => p.codigo)).slice(0, nomes.length * TAMANHO_TIME);
-  return { jogadores, fila };
+  return { jogadores, fila, indiceAtual: 0, repescagem: [], vendas: [] };
 }
 
 export function formatarReais(valor: number) {

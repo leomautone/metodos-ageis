@@ -4,10 +4,13 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Botao } from '@/components/Botao';
 import { Painel } from '@/components/Painel';
+import { usePartida } from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
 // Tela Início. Os botões ganham ação conforme cada tela for criada.
 export default function Inicio() {
+  const partida = usePartida();
+
   return (
     <SafeAreaView style={styles.tela}>
       <View style={styles.cabecalho}>
@@ -22,7 +25,11 @@ export default function Inicio() {
           detalhe="3 a 5 jogadores"
           onPress={() => router.push('/partida/nova')}
         />
-        <Botao titulo="Continuar partida" detalhe="nenhuma partida salva" />
+        <Botao
+          titulo="Continuar partida"
+          detalhe={partida ? 'voltar ao leilão' : 'nenhuma partida em andamento'}
+          onPress={partida ? () => router.push('/partida/leilao') : undefined}
+        />
         <Botao
           titulo="Consultar personagens"
           detalhe="atributos, Poder e habilidades"
