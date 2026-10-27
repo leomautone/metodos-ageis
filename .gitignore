@@ -39,3 +39,6 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# anotações locais (não versionar)
+prompt-all-in-draft-ap2.md
