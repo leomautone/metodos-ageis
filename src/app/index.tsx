@@ -17,7 +17,11 @@ export default function Inicio() {
       </View>
 
       <Painel style={styles.menu}>
-        <Botao titulo="Nova partida" detalhe="em breve" />
+        <Botao
+          titulo="Nova partida"
+          detalhe="3 a 5 jogadores"
+          onPress={() => router.push('/partida/nova')}
+        />
         <Botao titulo="Continuar partida" detalhe="nenhuma partida salva" />
         <Botao
           titulo="Consultar personagens"

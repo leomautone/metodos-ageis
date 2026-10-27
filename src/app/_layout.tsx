@@ -35,6 +35,7 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" options={{ headerShown: false }} />
         <Stack.Screen name="personagens/index" options={{ title: 'Personagens' }} />
+        <Stack.Screen name="partida/nova" options={{ title: 'Nova partida' }} />
       </Stack>
     </>
   );
