@@ -1,269 +1,236 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/Avatar';
 import { Botao } from '@/components/Botao';
+import { Cabecalho } from '@/components/Cabecalho';
+import { Cronometro } from '@/components/Cronometro';
 import { HabitatTag } from '@/components/HabitatTag';
-import { Painel } from '@/components/Painel';
+import { ImagemPersonagem } from '@/components/ImagemPersonagem';
 import { buscarPersonagem } from '@/data/personagens';
 import {
   encerrarPersonagem,
   lanceMinimo,
   leilaoConcluido,
+  MAX_REPESCAGEM,
   podeDarLance,
   TEMPO_APOS_LANCE_MS,
   TEMPO_INICIAL_MS,
   vagas,
   type Lance,
 } from '@/partida/leilao';
-import { formatarReais, salvarPartida, usePartida, type Partida, type Venda } from '@/partida/partida';
+import { buscarJogador, formatarReais, salvarPartida, TAMANHO_TIME, usePartida } from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
-// Leilão (SCRUM-21): personagem da vez, cronômetro 15 s / 5 s, lances,
-// saldo de cada jogador e registro do vencedor e do valor.
+// Leilão (SCRUM-21): personagem da vez, cronômetro 15 s / 5 s, lances e saldo de cada jogador.
+// Quem leva o personagem segue para o registro da carta (QR).
 export default function Leilao() {
   const partida = usePartida();
+  const { bottom } = useSafeAreaInsets();
   const [lance, setLance] = useState<Lance | null>(null);
   const [valor, setValor] = useState(0);
+  const [selecionado, setSelecionado] = useState<number | null>(null);
   const [fimEm, setFimEm] = useState<number | null>(null);
+  const [duracao, setDuracao] = useState(TEMPO_INICIAL_MS);
   const [agora, setAgora] = useState(Date.now());
-  const [resultado, setResultado] = useState<Venda | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
   // Atualiza o cronômetro várias vezes por segundo enquanto ele corre.
   useEffect(() => {
     if (fimEm === null) return;
-    const intervalo = setInterval(() => setAgora(Date.now()), 200);
+    const intervalo = setInterval(() => setAgora(Date.now()), 100);
     return () => clearInterval(intervalo);
   }, [fimEm]);
-
-  const restanteMs = fimEm === null ? TEMPO_INICIAL_MS : Math.max(0, fimEm - agora);
 
   useEffect(() => {
     if (fimEm !== null && agora >= fimEm) encerrar();
   });
 
-  if (!partida) {
+  const concluido = partida !== null && leilaoConcluido(partida) && !partida.pendente;
+  useEffect(() => {
+    if (concluido) router.replace('/partida/times');
+  }, [concluido]);
+
+  if (!partida || concluido) {
     return (
-      <View style={[styles.tela, styles.conteudo]}>
-        <Text style={styles.texto}>Nenhuma partida em andamento.</Text>
-        <Botao titulo="Nova partida" onPress={() => router.replace('/partida/nova')} />
+      <View style={styles.tela}>
+        <Cabecalho titulo="Leilão" />
+        {!partida ? (
+          <View style={styles.vazio}>
+            <Text style={styles.legenda}>Nenhuma partida em andamento.</Text>
+            <Botao titulo="Nova partida" onPress={() => router.replace('/partida/nova')} />
+          </View>
+        ) : null}
       </View>
     );
-  }
-
-  function iniciar() {
-    setAgora(Date.now());
-    setFimEm(Date.now() + TEMPO_INICIAL_MS);
-  }
-
-  function darLance(jogadorId: number) {
-    const valorLance = Math.max(valor, lanceMinimo(lance));
-    setLance({ jogadorId, valor: valorLance });
-    setValor(valorLance + 1);
-    // Cada lance novo reinicia o cronômetro em 5 s.
-    setAgora(Date.now());
-    setFimEm(Date.now() + TEMPO_APOS_LANCE_MS);
-  }
-
-  function encerrar() {
-    if (!partida) return;
-    const fechado = encerrarPersonagem(partida, lance);
-    setFimEm(null);
-    setResultado(fechado.venda);
-    salvarPartida(fechado.partida);
-  }
-
-  function proximo() {
-    setResultado(null);
-    setLance(null);
-    setValor(0);
-  }
-
-  if (resultado) {
-    return <Resultado partida={partida} venda={resultado} onProximo={proximo} />;
-  }
-
-  if (leilaoConcluido(partida)) {
-    return <Resumo partida={partida} />;
   }
 
   const p = buscarPersonagem(partida.fila[partida.indiceAtual])!;
   const correndo = fimEm !== null;
   const minimo = lanceMinimo(lance);
+  const valorAtual = Math.max(valor, minimo);
+  const restanteMs = correndo ? Math.max(0, fimEm - agora) : TEMPO_INICIAL_MS;
   const segundos = Math.ceil(restanteMs / 1000);
-  const lider = partida.jogadores.find((j) => j.id === lance?.jogadorId);
+  const lider = buscarJogador(partida, lance?.jogadorId ?? null);
+  const quemDa = buscarJogador(partida, selecionado);
+  const podeDar = quemDa ? podeDarLance(quemDa, valorAtual, lance) : false;
 
-  return (
-    <ScrollView style={styles.tela} contentContainerStyle={styles.conteudo}>
-      <Text style={styles.posicao}>
-        Personagem {partida.indiceAtual + 1} de {partida.fila.length} · repescagem{' '}
-        {partida.repescagem.length}/3
-      </Text>
+  function iniciar() {
+    setAviso(null);
+    setAgora(Date.now());
+    setDuracao(TEMPO_INICIAL_MS);
+    setFimEm(Date.now() + TEMPO_INICIAL_MS);
+  }
 
-      <Painel style={styles.carta}>
-        <Text style={styles.codigo}>{p.codigo}</Text>
-        <Text style={styles.nome}>{p.nome}</Text>
-        <View style={styles.habitats}>
-          {p.habitats.map((h) => (
-            <HabitatTag key={h} habitat={h} />
-          ))}
-        </View>
-        <Pressable
-          onPress={() => router.push({ pathname: '/personagens/[codigo]', params: { codigo: p.codigo } })}
-        >
-          <Text style={styles.link}>ver atributos e habilidade</Text>
-        </Pressable>
-      </Painel>
+  function darLance() {
+    if (!quemDa || !podeDar) return;
+    setLance({ jogadorId: quemDa.id, valor: valorAtual });
+    setValor(valorAtual + 1);
+    setSelecionado(null);
+    // Cada lance novo reinicia o cronômetro em 5 s.
+    setAgora(Date.now());
+    setDuracao(TEMPO_APOS_LANCE_MS);
+    setFimEm(Date.now() + TEMPO_APOS_LANCE_MS);
+  }
 
-      <View style={styles.placar}>
-        <View style={styles.placarItem}>
-          <Text style={styles.rotulo}>TEMPO</Text>
-          <Text style={[styles.relogio, correndo && segundos <= 3 && styles.relogioUrgente]}>
-            {segundos}s
-          </Text>
-        </View>
-        <View style={styles.placarItem}>
-          <Text style={styles.rotulo}>LANCE ATUAL</Text>
-          <Text style={styles.lanceValor}>{lance ? formatarReais(lance.valor) : '—'}</Text>
-          <Text style={styles.lanceNome}>{lider ? lider.nome : 'sem lances'}</Text>
-        </View>
-      </View>
-
-      {!correndo ? (
-        <Botao titulo="Iniciar cronômetro" detalhe="15 segundos" onPress={iniciar} />
-      ) : (
-        <>
-          <Painel style={styles.bloco}>
-            <Text style={styles.titulo}>Valor do lance</Text>
-            <View style={styles.seletor}>
-              <Pressable
-                onPress={() => setValor(Math.max(minimo, valor - 1))}
-                style={styles.passo}
-                hitSlop={6}
-              >
-                <Text style={styles.passoTexto}>−</Text>
-              </Pressable>
-              <Text style={styles.valor}>{formatarReais(Math.max(valor, minimo))}</Text>
-              <Pressable onPress={() => setValor(Math.max(valor, minimo) + 1)} style={styles.passo} hitSlop={6}>
-                <Text style={styles.passoTexto}>+</Text>
-              </Pressable>
-            </View>
-            <Text style={styles.ajuda}>Toque no jogador que deu o lance.</Text>
-          </Painel>
-          <Botao titulo="Bater o martelo" detalhe="encerrar agora" onPress={encerrar} />
-        </>
-      )}
-
-      <Painel style={styles.bloco}>
-        <Text style={styles.titulo}>Jogadores</Text>
-        {partida.jogadores.map((j) => {
-          const valido = correndo && podeDarLance(j, Math.max(valor, minimo), lance);
-          const liderando = j.id === lance?.jogadorId;
-          return (
-            <Pressable
-              key={j.id}
-              disabled={!valido}
-              onPress={() => darLance(j.id)}
-              style={({ pressed }) => [
-                styles.jogador,
-                liderando && styles.jogadorLider,
-                valido && styles.jogadorValido,
-                pressed && styles.jogadorPressionado,
-              ]}
-            >
-              <View style={styles.flex}>
-                <Text style={styles.jogadorNome}>{j.nome}</Text>
-                <Text style={styles.ajuda}>
-                  {vagas(j) === 0 ? 'time completo' : `${vagas(j)} vaga(s)`}
-                </Text>
-              </View>
-              <Text style={styles.saldo}>{formatarReais(j.saldo)}</Text>
-            </Pressable>
-          );
-        })}
-      </Painel>
-    </ScrollView>
-  );
-}
-
-function Resultado({ partida, venda, onProximo }: { partida: Partida; venda: Venda; onProximo: () => void }) {
-  const p = buscarPersonagem(venda.codigo)!;
-  const nome = (id: number) => partida.jogadores.find((j) => j.id === id)!.nome;
-  const ultimo = leilaoConcluido(partida);
-
-  let titulo: string;
-  let detalhe: string;
-  if (venda.tipo === 'lance') {
-    titulo = `Vendido para ${nome(venda.jogadorId!)}`;
-    detalhe = venda.valor === 0 ? 'Lance de R$ 0 sem disputa: leva de graça.' : `por ${formatarReais(venda.valor)}`;
-  } else if (venda.tipo === 'repescagem') {
-    titulo = 'Sem lance';
-    detalhe = `Vai para a repescagem (${partida.repescagem.length}/3).`;
-  } else {
-    titulo = `Sem lance → ${nome(venda.jogadorId!)}`;
-    detalhe = `Repescagem cheia: vai para quem tem mais vagas, por ${formatarReais(venda.valor)}.`;
+  function encerrar() {
+    if (!partida) return;
+    const { partida: nova, venda } = encerrarPersonagem(partida, lance);
+    setFimEm(null);
+    setLance(null);
+    setValor(0);
+    setSelecionado(null);
+    salvarPartida(nova);
+    if (venda.jogadorId !== null) {
+      router.push('/partida/registrar');
+    } else {
+      setAviso(`${p.nome} ficou sem lance e foi para a repescagem (${nova.repescagem.length}/${MAX_REPESCAGEM}).`);
+    }
   }
 
   return (
-    <ScrollView style={styles.tela} contentContainerStyle={styles.conteudo}>
-      <Painel style={styles.carta}>
-        <Text style={styles.codigo}>{p.codigo}</Text>
-        <Text style={styles.nome}>{p.nome}</Text>
-        <Text style={styles.martelo}>{titulo}</Text>
-        <Text style={styles.texto}>{detalhe}</Text>
-        {venda.dados ? (
-          <View style={styles.dados}>
-            <Text style={styles.ajuda}>Desempate no dado (menor fica com ele):</Text>
-            {Object.entries(venda.dados).map(([id, valores]) => (
-              <Text key={id} style={styles.texto}>
-                {nome(Number(id))}: {valores.join(' → ')}
-              </Text>
-            ))}
+    <View style={styles.tela}>
+      <Cabecalho titulo="Leilão" subtitulo={`Personagem ${partida.indiceAtual + 1} de ${partida.fila.length}`} />
+
+      <ScrollView contentContainerStyle={styles.conteudo}>
+        <View style={styles.carta}>
+          <ImagemPersonagem codigo={p.codigo} style={styles.imagem} />
+          <View style={styles.cartaTexto}>
+            <Text style={styles.nome} numberOfLines={2}>
+              {p.nome}
+            </Text>
+            <Text style={styles.codigo}>{p.codigo}</Text>
+            <View style={styles.habitats}>
+              {p.habitats.map((h) => (
+                <HabitatTag key={h} habitat={h} tamanho={24} />
+              ))}
+            </View>
+            <Pressable
+              onPress={() => router.push({ pathname: '/personagens/[codigo]', params: { codigo: p.codigo } })}
+              accessibilityRole="button"
+              style={({ pressed }) => [styles.atributos, pressed && styles.atributosPressionado]}
+            >
+              <Text style={styles.atributosTexto}>Ver atributos</Text>
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.relogio}>
+          <Cronometro segundos={segundos} fracao={correndo ? restanteMs / duracao : 1} urgente={correndo && segundos <= 2} />
+          <Text style={styles.legenda}>
+            {correndo ? 'Cada lance volta o relógio para 5 s' : 'O relógio começa com 15 s'}
+          </Text>
+        </View>
+
+        {aviso ? (
+          <View style={styles.aviso}>
+            <Text style={styles.avisoTexto}>{aviso}</Text>
           </View>
         ) : null}
-      </Painel>
-      <Botao titulo={ultimo ? 'Ver times' : 'Próximo personagem'} onPress={onProximo} />
-    </ScrollView>
-  );
-}
 
-function Resumo({ partida }: { partida: Partida }) {
-  return (
-    <ScrollView style={styles.tela} contentContainerStyle={styles.conteudo}>
-      <Text style={styles.martelo}>Leilão encerrado</Text>
-      {partida.jogadores.map((j) => (
-        <Painel key={j.id} style={styles.bloco}>
-          <View style={styles.linha}>
-            <Text style={[styles.titulo, styles.flex]}>{j.nome}</Text>
-            <Text style={styles.saldo}>{formatarReais(j.saldo)}</Text>
+        <View style={styles.lanceAtual}>
+          <View>
+            <Text style={styles.lanceRotulo}>LANCE ATUAL</Text>
+            <Text style={styles.lanceValor}>{lance ? formatarReais(lance.valor) : '—'}</Text>
           </View>
-          {j.time.length === 0 ? <Text style={styles.ajuda}>Nenhum personagem ainda.</Text> : null}
-          {j.time.map((codigo) => {
-            const venda = partida.vendas.find((v) => v.codigo === codigo)!;
+          <Text style={styles.lanceNome}>{lider ? lider.nome : 'sem lances'}</Text>
+        </View>
+
+        <View style={styles.grade}>
+          {partida.jogadores.map((j) => {
+            const valido = correndo && podeDarLance(j, valorAtual, lance);
+            const ativo = j.id === selecionado;
+            const livres = vagas(j);
             return (
-              <View key={codigo} style={styles.linha}>
-                <Text style={styles.codigo}>{codigo}</Text>
-                <Text style={[styles.texto, styles.flex, styles.esquerda]}>{buscarPersonagem(codigo)!.nome}</Text>
-                <Text style={styles.ajuda}>{formatarReais(venda.valor)}</Text>
-              </View>
+              <Pressable
+                key={j.id}
+                disabled={!valido}
+                onPress={() => setSelecionado(j.id)}
+                accessibilityRole="button"
+                accessibilityState={{ selected: ativo, disabled: !valido }}
+                style={[styles.jogador, ativo && styles.jogadorAtivo, correndo && !valido && styles.jogadorInativo]}
+              >
+                <Avatar jogadorId={j.id} texto={j.nome.charAt(0).toUpperCase()} tamanho={34} />
+                <View style={styles.jogadorTexto}>
+                  <Text style={styles.jogadorNome} numberOfLines={1}>
+                    {j.nome}
+                  </Text>
+                  <View style={styles.saldoLinha}>
+                    <Text style={styles.saldo}>{formatarReais(j.saldo)}</Text>
+                    <View style={styles.pontos} accessibilityLabel={`${livres} vagas`}>
+                      {Array.from({ length: TAMANHO_TIME }, (_, i) => (
+                        <View key={i} style={[styles.ponto, i < livres && styles.pontoCheio]} />
+                      ))}
+                    </View>
+                  </View>
+                </View>
+              </Pressable>
             );
           })}
-        </Painel>
-      ))}
-      {partida.repescagem.length > 0 ? (
-        <Painel style={styles.bloco}>
-          <Text style={styles.titulo}>Repescagem</Text>
-          {partida.repescagem.map((codigo) => (
-            <View key={codigo} style={styles.linha}>
-              <Text style={styles.codigo}>{codigo}</Text>
-              <Text style={[styles.texto, styles.flex, styles.esquerda]}>{buscarPersonagem(codigo)!.nome}</Text>
+        </View>
+
+        {correndo ? (
+          <View style={styles.valorLinha}>
+            <Pressable
+              onPress={() => setValor(Math.max(minimo, valorAtual - 1))}
+              disabled={valorAtual <= minimo}
+              accessibilityRole="button"
+              accessibilityLabel="Diminuir lance"
+              style={[styles.passo, valorAtual <= minimo && styles.inativo]}
+            >
+              <Text style={styles.passoTexto}>−</Text>
+            </Pressable>
+            <View style={styles.valor}>
+              <Text style={styles.valorTexto}>{formatarReais(valorAtual)}</Text>
             </View>
-          ))}
-          <Text style={styles.ajuda}>A distribuição da repescagem chega na próxima versão.</Text>
-        </Painel>
-      ) : null}
-      <Botao titulo="Voltar ao início" onPress={() => router.dismissTo('/')} />
-    </ScrollView>
+            <Pressable
+              onPress={() => setValor(valorAtual + 1)}
+              accessibilityRole="button"
+              accessibilityLabel="Aumentar lance"
+              style={styles.passo}
+            >
+              <Text style={styles.passoTexto}>+</Text>
+            </Pressable>
+          </View>
+        ) : null}
+      </ScrollView>
+
+      <View style={[styles.rodape, { paddingBottom: bottom + 16 }]}>
+        {correndo ? (
+          <Botao
+            titulo={quemDa ? `${quemDa.nome} dá lance` : 'Toque em quem dá lance'}
+            onPress={darLance}
+            desativado={!podeDar}
+            style={styles.flex}
+          />
+        ) : (
+          <Botao titulo="Começar" onPress={iniciar} style={styles.flex} />
+        )}
+        <Botao titulo={lance ? 'Vender' : 'Sem lance'} variante="secundario" onPress={encerrar} style={styles.secundario} />
+      </View>
+    </View>
   );
 }
 
@@ -272,184 +239,222 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: cores.fundo,
   },
-  conteudo: {
-    padding: 16,
-    gap: 14,
-    paddingBottom: 40,
-  },
   flex: {
     flex: 1,
   },
-  linha: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+  vazio: {
+    padding: 24,
+    gap: 16,
   },
-  posicao: {
-    fontFamily: fontes.textoForte,
-    fontSize: 12,
-    color: cores.textoSuave,
-    textAlign: 'center',
-    letterSpacing: 1,
+  conteudo: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 12,
+    gap: 16,
   },
   carta: {
-    alignItems: 'center',
-    paddingVertical: 22,
-    gap: 6,
+    flexDirection: 'row',
+    gap: 14,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: cores.dourado,
+    backgroundColor: cores.painel,
   },
-  codigo: {
-    fontFamily: fontes.numero,
-    fontSize: 14,
-    color: cores.dourado,
-    letterSpacing: 1,
+  imagem: {
+    width: 130,
+    height: 130,
+    borderRadius: 10,
+  },
+  cartaTexto: {
+    flex: 1,
+    paddingTop: 6,
   },
   nome: {
     fontFamily: fontes.titulo,
-    fontSize: 24,
+    fontSize: 18,
     color: cores.douradoClaro,
-    textAlign: 'center',
+  },
+  codigo: {
+    fontFamily: fontes.numero,
+    fontSize: 13,
+    letterSpacing: 0.78,
+    color: cores.textoSuave,
+    marginTop: 4,
   },
   habitats: {
     flexDirection: 'row',
     gap: 6,
-    marginTop: 4,
-  },
-  link: {
-    fontFamily: fontes.texto,
-    fontSize: 13,
-    color: cores.dourado,
-    textDecorationLine: 'underline',
     marginTop: 6,
   },
-  placar: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  placarItem: {
-    flex: 1,
+  atributos: {
+    height: 30,
+    borderRadius: 8,
+    backgroundColor: cores.painelClaro,
     alignItems: 'center',
-    backgroundColor: cores.painel,
-    borderColor: cores.dourado,
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingVertical: 12,
+    justifyContent: 'center',
+    marginTop: 'auto',
   },
-  rotulo: {
-    fontFamily: fontes.textoForte,
-    fontSize: 11,
-    color: cores.textoSuave,
-    letterSpacing: 2,
+  atributosPressionado: {
+    backgroundColor: cores.douradoEscuro,
+  },
+  atributosTexto: {
+    fontFamily: fontes.textoMedio,
+    fontSize: 13,
+    color: cores.douradoClaro,
   },
   relogio: {
-    fontFamily: fontes.numero,
-    fontSize: 44,
-    color: cores.douradoClaro,
-  },
-  relogioUrgente: {
-    color: '#E07A6A',
-  },
-  lanceValor: {
-    fontFamily: fontes.numero,
-    fontSize: 30,
-    color: cores.douradoClaro,
-    marginTop: 6,
-  },
-  lanceNome: {
-    fontFamily: fontes.texto,
-    fontSize: 13,
-    color: cores.texto,
-  },
-  bloco: {
+    alignItems: 'center',
     gap: 10,
   },
-  titulo: {
-    fontFamily: fontes.titulo,
-    fontSize: 16,
-    color: cores.dourado,
-  },
-  seletor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  passo: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderColor: cores.dourado,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  passoTexto: {
-    fontFamily: fontes.numero,
-    fontSize: 22,
-    color: cores.douradoClaro,
-  },
-  valor: {
-    fontFamily: fontes.numero,
-    fontSize: 30,
-    color: cores.douradoClaro,
-    minWidth: 110,
-    textAlign: 'center',
-  },
-  ajuda: {
+  legenda: {
     fontFamily: fontes.texto,
     fontSize: 12,
     color: cores.textoSuave,
+    textAlign: 'center',
+  },
+  aviso: {
+    backgroundColor: cores.painelClaro,
+    borderColor: cores.habitat.ar,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  avisoTexto: {
+    fontFamily: fontes.textoMedio,
+    fontSize: 13,
+    color: cores.texto,
+    textAlign: 'center',
+  },
+  lanceAtual: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    height: 56,
+    paddingHorizontal: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: cores.dourado,
+    backgroundColor: 'rgba(140,107,31,0.35)',
+  },
+  lanceRotulo: {
+    fontFamily: fontes.numero,
+    fontSize: 12,
+    letterSpacing: 0.96,
+    color: cores.douradoClaro,
+  },
+  lanceValor: {
+    fontFamily: fontes.numeroForte,
+    fontSize: 24,
+    lineHeight: 30,
+    color: cores.douradoClaro,
+  },
+  lanceNome: {
+    fontFamily: fontes.textoForte,
+    fontSize: 16,
+    color: cores.texto,
+  },
+  grade: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
   },
   jogador: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    borderColor: cores.desativado,
+    gap: 8,
+    width: '48.8%',
+    flexGrow: 1,
+    height: 62,
+    paddingHorizontal: 10,
+    borderRadius: 12,
     borderWidth: 1,
-    borderRadius: 6,
-    padding: 12,
-    opacity: 0.6,
+    borderColor: cores.douradoEscuro,
+    backgroundColor: cores.painel,
   },
-  jogadorValido: {
+  jogadorAtivo: {
+    borderWidth: 2,
     borderColor: cores.dourado,
-    opacity: 1,
+    backgroundColor: cores.painelClaro,
   },
-  jogadorLider: {
-    backgroundColor: '#3A3220',
-    borderColor: cores.douradoClaro,
-    opacity: 1,
+  jogadorInativo: {
+    opacity: 0.45,
   },
-  jogadorPressionado: {
-    backgroundColor: cores.dourado,
+  jogadorTexto: {
+    flex: 1,
   },
   jogadorNome: {
-    fontFamily: fontes.textoForte,
+    fontFamily: fontes.textoMedio,
     fontSize: 15,
     color: cores.texto,
   },
+  saldoLinha: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
   saldo: {
-    fontFamily: fontes.numero,
-    fontSize: 17,
+    fontFamily: fontes.numeroForte,
+    fontSize: 15,
+    color: cores.dourado,
+  },
+  pontos: {
+    flexDirection: 'row',
+    gap: 4,
+  },
+  ponto: {
+    width: 9,
+    height: 9,
+    borderRadius: 4.5,
+    backgroundColor: cores.painelClaro,
+  },
+  pontoCheio: {
+    backgroundColor: cores.douradoClaro,
+  },
+  valorLinha: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  passo: {
+    width: 64,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: cores.dourado,
+    backgroundColor: cores.painel,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  inativo: {
+    opacity: 0.4,
+  },
+  passoTexto: {
+    fontFamily: fontes.numeroForte,
+    fontSize: 26,
     color: cores.douradoClaro,
   },
-  martelo: {
-    fontFamily: fontes.titulo,
-    fontSize: 20,
-    color: cores.dourado,
-    textAlign: 'center',
-    marginTop: 10,
-  },
-  texto: {
-    fontFamily: fontes.texto,
-    fontSize: 14,
-    color: cores.texto,
-    textAlign: 'center',
-  },
-  esquerda: {
-    textAlign: 'left',
-  },
-  dados: {
-    marginTop: 8,
+  valor: {
+    flex: 1,
+    height: 52,
+    borderRadius: 12,
+    backgroundColor: cores.painelClaro,
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
+  },
+  valorTexto: {
+    fontFamily: fontes.numeroForte,
+    fontSize: 26,
+    color: cores.douradoClaro,
+  },
+  rodape: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingTop: 8,
+  },
+  secundario: {
+    width: 124,
+    paddingHorizontal: 6,
   },
 });
