@@ -137,6 +137,9 @@ export default function Leilao() {
           </View>
         </View>
 
+        {/* Só o texto da carta impressa; Poder e atributos ficam atrás do "Ver atributos". */}
+        <Text style={styles.descricao}>“{p.descricao}”</Text>
+
         <View style={styles.relogio}>
           <Cronometro segundos={segundos} fracao={correndo ? restanteMs / duracao : 1} urgente={correndo && segundos <= 2} />
           <Text style={styles.legenda}>
@@ -302,6 +305,13 @@ const styles = StyleSheet.create({
     fontFamily: fontes.textoMedio,
     fontSize: 13,
     color: cores.douradoClaro,
+  },
+  descricao: {
+    fontFamily: fontes.textoItalico,
+    fontSize: 14,
+    lineHeight: 21,
+    color: cores.textoSuave,
+    marginTop: -2,
   },
   relogio: {
     alignItems: 'center',
