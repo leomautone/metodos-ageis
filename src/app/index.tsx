@@ -1,44 +1,85 @@
 import { router } from 'expo-router';
-import { StyleSheet, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Botao } from '@/components/Botao';
+import { Estrela } from '@/components/Estrela';
 import { Painel } from '@/components/Painel';
-import { usePartida } from '@/partida/partida';
+import { Rotulo } from '@/components/Rotulo';
+import { PERSONAGENS } from '@/data/personagens';
+import { descreverFase, rotaDaPartida, salvarPartida, usePartida } from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
-// Tela Início. Os botões ganham ação conforme cada tela for criada.
+// Letras do logo em peças douradas, cada uma levemente girada (graus).
+const LOGO = [
+  [['A', 4], ['L', -3], ['L', 2]],
+  [['I', -5], ['N', 3]],
+  [['D', -2], ['R', 4], ['A', -3], ['F', 2], ['T', -4]],
+] as const;
+
 export default function Inicio() {
   const partida = usePartida();
+  const { top, bottom } = useSafeAreaInsets();
+
+  function novaPartida() {
+    salvarPartida(null);
+    router.push('/partida/nova');
+  }
 
   return (
-    <SafeAreaView style={styles.tela}>
-      <View style={styles.cabecalho}>
-        <Text style={styles.naipe}>♠ ♥ ♣ ♦</Text>
-        <Text style={styles.titulo}>All-in Draft</Text>
-        <Text style={styles.subtitulo}>Animais</Text>
+    <ScrollView
+      style={styles.tela}
+      contentContainerStyle={[styles.conteudo, { paddingTop: top + 40, paddingBottom: bottom + 24 }]}
+    >
+      <View style={styles.logo} accessibilityRole="header" accessibilityLabel="All-in Draft">
+        {LOGO.map((linha, i) => (
+          <View key={i} style={styles.linhaLogo}>
+            {linha.map(([letra, giro], j) => (
+              <View key={j} style={[styles.peca, { transform: [{ rotate: `${giro}deg` }] }]}>
+                <Text style={styles.letra}>{letra}</Text>
+              </View>
+            ))}
+          </View>
+        ))}
+        <View style={[styles.estrela, { left: 0, top: -20 }]}>
+          <Estrela tamanho={30} />
+        </View>
+        <View style={[styles.estrela, { right: 0, top: 0 }]}>
+          <Estrela tamanho={16} />
+        </View>
+        <View style={[styles.estrela, { left: -8, bottom: -40 }]}>
+          <Estrela tamanho={14} />
+        </View>
+        <View style={[styles.estrela, { right: -12, bottom: -50 }]}>
+          <Estrela tamanho={34} />
+        </View>
       </View>
 
-      <Painel style={styles.menu}>
-        <Botao
-          titulo="Nova partida"
-          detalhe="3 a 5 jogadores"
-          onPress={() => router.push('/partida/nova')}
-        />
-        <Botao
-          titulo="Continuar partida"
-          detalhe={partida ? 'voltar ao leilão' : 'nenhuma partida em andamento'}
-          onPress={partida ? () => router.push('/partida/leilao') : undefined}
-        />
-        <Botao
-          titulo="Consultar personagens"
-          detalhe="atributos, Poder e habilidades"
-          onPress={() => router.push('/personagens')}
-        />
+      <Text style={styles.chamada}>
+        Monte seu time num leilão.{'\n'}Veja ele lutar até o último.
+      </Text>
+
+      <Painel style={styles.tema}>
+        <View>
+          <Rotulo>Tema da partida</Rotulo>
+          <Text style={styles.temaNome}>Animais</Text>
+        </View>
+        <Text style={styles.temaQtd}>{PERSONAGENS.length} personagens</Text>
       </Painel>
 
-      <Text style={styles.rodape}>Métodos Ágeis · Ibmec 2026.2</Text>
-    </SafeAreaView>
+      <View style={styles.botoes}>
+        <Botao titulo="Nova partida" onPress={novaPartida} />
+        <View>
+          <Botao
+            titulo="Continuar partida"
+            variante="secundario"
+            onPress={partida ? () => router.push(rotaDaPartida(partida)) : undefined}
+          />
+          <Text style={styles.legenda}>{partida ? descreverFase(partida) : 'Nenhuma partida em andamento'}</Text>
+        </View>
+        <Botao titulo="Consultar personagens" variante="secundario" onPress={() => router.push('/personagens')} />
+      </View>
+    </ScrollView>
   );
 }
 
@@ -46,42 +87,76 @@ const styles = StyleSheet.create({
   tela: {
     flex: 1,
     backgroundColor: cores.fundo,
-    padding: 24,
+  },
+  conteudo: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+  },
+  logo: {
+    alignSelf: 'center',
+    alignItems: 'center',
+    gap: 12,
+    marginTop: 30,
+    paddingHorizontal: 60,
+  },
+  linhaLogo: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  peca: {
+    width: 44,
+    height: 44,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: cores.douradoClaro,
+    backgroundColor: cores.dourado,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  cabecalho: {
-    alignItems: 'center',
-    marginBottom: 32,
+  letra: {
+    fontFamily: fontes.tituloPreto,
+    fontSize: 26,
+    color: cores.fundo,
+    includeFontPadding: false,
   },
-  naipe: {
-    color: cores.dourado,
-    fontSize: 18,
-    letterSpacing: 6,
-    marginBottom: 8,
+  estrela: {
+    position: 'absolute',
   },
-  titulo: {
-    fontFamily: fontes.titulo,
-    fontSize: 40,
-    color: cores.douradoClaro,
+  chamada: {
+    fontFamily: fontes.texto,
+    fontSize: 16,
+    lineHeight: 24,
+    color: cores.textoSuave,
     textAlign: 'center',
+    marginTop: 64,
   },
-  subtitulo: {
-    fontFamily: fontes.tituloRegular,
-    fontSize: 18,
-    color: cores.texto,
-    letterSpacing: 4,
-    textTransform: 'uppercase',
-    marginTop: 4,
+  tema: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 28,
   },
-  menu: {
+  temaNome: {
+    fontFamily: fontes.titulo,
+    fontSize: 22,
+    color: cores.douradoClaro,
+    marginTop: 2,
+  },
+  temaQtd: {
+    fontFamily: fontes.texto,
+    fontSize: 14,
+    color: cores.textoSuave,
+  },
+  botoes: {
     gap: 14,
-    paddingVertical: 28,
+    marginTop: 'auto',
+    paddingTop: 36,
   },
-  rodape: {
+  legenda: {
     fontFamily: fontes.texto,
     fontSize: 12,
     color: cores.textoSuave,
     textAlign: 'center',
-    marginTop: 32,
+    marginTop: 4,
   },
 });

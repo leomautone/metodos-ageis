@@ -16,7 +16,7 @@ export function vagas(jogador: Jogador) {
   return TAMANHO_TIME - jogador.time.length;
 }
 
-// Lance mínimo R$ 0,00; depois, incremento mínimo de R$ 1,00.
+// Lance mínimo R$ 0; depois, incremento mínimo de R$ 1.
 export function lanceMinimo(lance: Lance | null) {
   return lance ? lance.valor + 1 : 0;
 }
@@ -56,17 +56,16 @@ function escolherObrigatorio(jogadores: Jogador[]) {
   return { jogadorId: candidatos[0], dados };
 }
 
-// Fecha o personagem da vez e devolve a partida atualizada e o que aconteceu.
+// Decide como o personagem da vez sai do leilão, sem mexer em saldo nem time.
+// Sem lance com repescagem livre, ele já vai direto para a repescagem.
 export function encerrarPersonagem(partida: Partida, lance: Lance | null) {
   const codigo = partida.fila[partida.indiceAtual];
   let venda: Venda;
-  let repescagem = partida.repescagem;
 
   if (lance) {
     venda = { codigo, jogadorId: lance.jogadorId, valor: lance.valor, tipo: 'lance' };
-  } else if (repescagem.length < MAX_REPESCAGEM) {
+  } else if (partida.repescagem.length < MAX_REPESCAGEM) {
     venda = { codigo, jogadorId: null, valor: 0, tipo: 'repescagem' };
-    repescagem = [...repescagem, codigo];
   } else {
     const { jogadorId, dados } = escolherObrigatorio(partida.jogadores);
     const saldo = partida.jogadores.find((j) => j.id === jogadorId)!.saldo;
@@ -75,21 +74,27 @@ export function encerrarPersonagem(partida: Partida, lance: Lance | null) {
     venda = { codigo, jogadorId, valor, tipo: 'obrigatorio', dados };
   }
 
+  // Quem ganhou um personagem ainda precisa registrar a carta (QR) antes de seguir.
+  if (venda.jogadorId !== null) {
+    return { partida: { ...partida, pendente: venda }, venda };
+  }
+  return { partida: aplicarVenda(partida, venda), venda };
+}
+
+// Registra a venda: desconta o valor, põe no time e passa para o próximo personagem.
+export function aplicarVenda(partida: Partida, venda: Venda): Partida {
   const jogadores = partida.jogadores.map((j) =>
     j.id === venda.jogadorId
-      ? { ...j, saldo: j.saldo - venda.valor, time: [...j.time, codigo] }
+      ? { ...j, saldo: j.saldo - venda.valor, time: [...j.time, venda.codigo] }
       : j,
   );
-
   return {
-    partida: {
-      ...partida,
-      jogadores,
-      repescagem,
-      indiceAtual: partida.indiceAtual + 1,
-      vendas: [...partida.vendas, venda],
-    },
-    venda,
+    ...partida,
+    jogadores,
+    repescagem: venda.jogadorId === null ? [...partida.repescagem, venda.codigo] : partida.repescagem,
+    indiceAtual: partida.indiceAtual + 1,
+    vendas: [...partida.vendas, venda],
+    pendente: null,
   };
 }
 
