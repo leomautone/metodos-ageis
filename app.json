@@ -31,7 +31,8 @@
           "cameraPermission": "O All-in Draft usa a câmera para ler o QR code das cartas.",
           "recordAudioAndroid": false
         }
-      ]
+      ],
+      "expo-image"
     ],
     "scheme": "allindraft",
     "backgroundColor": "#15131C",

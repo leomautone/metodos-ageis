@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import type { Round } from '@/batalha/motor';
 import { nome } from '@/batalha/narracao';
 import { Botao } from '@/components/Botao';
+import { BotaoVoltar } from '@/components/BotaoVoltar';
 import { Estrela } from '@/components/Estrela';
 import { ImagemPersonagem } from '@/components/ImagemPersonagem';
 import { Rotulo } from '@/components/Rotulo';
@@ -61,72 +62,72 @@ export default function Resultado() {
   }
 
   return (
-    <ScrollView
-      style={styles.tela}
-      contentContainerStyle={[styles.conteudo, { paddingTop: top + 30, paddingBottom: bottom + 24 }]}
-    >
-      <View style={styles.topo}>
-        <View style={[styles.estrela, { left: 26, top: 40 }]}>
-          <Estrela tamanho={26} />
-        </View>
-        <View style={[styles.estrela, { right: 38, top: 70 }]}>
-          <Estrela tamanho={34} />
-        </View>
-        <View style={[styles.estrela, { right: 52, top: 20 }]}>
-          <Estrela tamanho={14} />
-        </View>
-        <View style={[styles.estrela, { left: 46, top: 230 }]}>
-          <Estrela tamanho={16} />
-        </View>
-
-        <Text style={styles.vitoria}>VITÓRIA</Text>
-        <Text style={styles.quem}>{vencedor ? `${vencedor.nome} vence a partida` : 'Ninguém ficou de pé'}</Text>
-
-        {heroi ? (
-          <>
-            <View style={styles.moldura}>
-              <ImagemPersonagem codigo={heroi} style={styles.heroi} />
-            </View>
-            <Text style={styles.heroiNome}>{nome(heroi)}</Text>
-            <Text style={styles.heroiLegenda}>
-              ficou de pé{usouHabilidade ? ` · ${p!.habilidade!.texto}` : ''}
-              {resultado.sobreviventes.length > 1
-                ? ` · com ${resultado.sobreviventes.slice(1).map(nome).join(' e ')}`
-                : ''}
-            </Text>
-          </>
-        ) : null}
-
-        {vencedor && chance < LIMITE_ZEBRA ? (
-          <View style={styles.zebra}>
-            <Text style={styles.zebraTexto}>ZEBRA! Tinha {formatarChance(chance)} de chance</Text>
+    <View style={styles.tela}>
+      <ScrollView contentContainerStyle={[styles.conteudo, { paddingTop: top + 30, paddingBottom: bottom + 24 }]}>
+        <View style={styles.topo}>
+          <View style={[styles.estrela, { left: 26, top: 40 }]}>
+            <Estrela tamanho={26} />
           </View>
-        ) : null}
-      </View>
+          <View style={[styles.estrela, { right: 38, top: 70 }]}>
+            <Estrela tamanho={34} />
+          </View>
+          <View style={[styles.estrela, { right: 52, top: 20 }]}>
+            <Estrela tamanho={14} />
+          </View>
+          <View style={[styles.estrela, { left: 46, top: 230 }]}>
+            <Estrela tamanho={16} />
+          </View>
 
-      <Rotulo style={styles.rotulo}>Classificação</Rotulo>
-      <View style={styles.lista}>
-        {classificacao.map((j, i) => {
-          const venceu = j.id === vencedor?.id;
-          return (
-            <View key={j.id} style={[styles.linha, venceu && styles.linhaVencedor]}>
-              <Text style={[styles.posicao, venceu && styles.posicaoVencedor]}>{i + 1}º</Text>
-              <Text style={styles.nome} numberOfLines={1}>
-                {j.nome}
+          <Text style={styles.vitoria}>VITÓRIA</Text>
+          <Text style={styles.quem}>{vencedor ? `${vencedor.nome} vence a partida` : 'Ninguém ficou de pé'}</Text>
+
+          {heroi ? (
+            <>
+              <View style={styles.moldura}>
+                <ImagemPersonagem codigo={heroi} style={styles.heroi} />
+              </View>
+              <Text style={styles.heroiNome}>{nome(heroi)}</Text>
+              <Text style={styles.heroiLegenda}>
+                ficou de pé{usouHabilidade ? ` · ${p!.habilidade!.texto}` : ''}
+                {resultado.sobreviventes.length > 1
+                  ? ` · com ${resultado.sobreviventes.slice(1).map(nome).join(' e ')}`
+                  : ''}
               </Text>
-              <Text style={styles.detalhe} numberOfLines={1}>
-                {venceu ? `${resultado.sobreviventes.map(nome).join(', ')} de pé` : comoCaiu(resultado.eliminacao[j.id])}
-              </Text>
+            </>
+          ) : null}
+
+          {vencedor && chance < LIMITE_ZEBRA ? (
+            <View style={styles.zebra}>
+              <Text style={styles.zebraTexto}>ZEBRA! Tinha {formatarChance(chance)} de chance</Text>
             </View>
-          );
-        })}
-      </View>
+          ) : null}
+        </View>
 
-      <View style={styles.botoes}>
-        <Botao titulo="Nova partida" onPress={novaPartida} />
-        <Botao titulo="Voltar ao início" variante="secundario" onPress={() => router.dismissTo('/')} style={styles.voltar} />
-      </View>
-    </ScrollView>
+        <Rotulo style={styles.rotulo}>Classificação</Rotulo>
+        <View style={styles.lista}>
+          {classificacao.map((j, i) => {
+            const venceu = j.id === vencedor?.id;
+            return (
+              <View key={j.id} style={[styles.linha, venceu && styles.linhaVencedor]}>
+                <Text style={[styles.posicao, venceu && styles.posicaoVencedor]}>{i + 1}º</Text>
+                <Text style={styles.nome} numberOfLines={1}>
+                  {j.nome}
+                </Text>
+                <Text style={styles.detalhe} numberOfLines={1}>
+                  {venceu ? `${resultado.sobreviventes.map(nome).join(', ')} de pé` : comoCaiu(resultado.eliminacao[j.id])}
+                </Text>
+              </View>
+            );
+          })}
+        </View>
+
+        <View style={styles.botoes}>
+          <Botao titulo="Nova partida" onPress={novaPartida} />
+          <Botao titulo="Voltar ao início" variante="secundario" onPress={() => router.dismissTo('/')} style={styles.voltar} />
+        </View>
+      </ScrollView>
+      <BotaoVoltar />
+    </View>
   );
 }
 

@@ -1,17 +1,17 @@
-import { router } from 'expo-router';
+import { usePreventRemove } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar } from '@/components/Avatar';
 import { Botao } from '@/components/Botao';
-import { Cabecalho } from '@/components/Cabecalho';
+import { Cabecalho, voltar } from '@/components/Cabecalho';
 import { ImagemPersonagem } from '@/components/ImagemPersonagem';
 import { LeitorQR } from '@/components/LeitorQR';
 import { normalizarCodigo } from '@/data/formatar';
 import { buscarPersonagem } from '@/data/personagens';
 import { aplicarVenda } from '@/partida/leilao';
-import { buscarJogador, formatarReais, salvarPartida, usePartida } from '@/partida/partida';
+import { buscarJogador, formatarReais, obterPartida, salvarPartida, usePartida } from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
 // Registro por QR (SCRUM-20): quem levou o personagem escaneia a carta,
@@ -22,6 +22,22 @@ export default function RegistrarCarta() {
   const [lido, setLido] = useState<string | null>(null);
   const [digitando, setDigitando] = useState(false);
   const [texto, setTexto] = useState('');
+  // Sair sem confirmar (setinha ou botão voltar do Android) pede confirmação
+  // e desfaz a venda: o personagem volta para o leilão e ninguém paga nada.
+  const liberarSaida = usePreventRemove(!!partida?.pendente, ({ repeat }) => {
+    Alert.alert('Desfazer a venda?', 'O personagem volta para o leilão e ninguém paga nada.', [
+      { text: 'Continuar registrando', style: 'cancel' },
+      {
+        text: 'Desfazer venda',
+        style: 'destructive',
+        onPress: () => {
+          const atual = obterPartida();
+          if (atual) salvarPartida({ ...atual, pendente: null });
+          repeat();
+        },
+      },
+    ]);
+  });
 
   const venda = partida?.pendente;
   if (!partida || !venda) {
@@ -41,7 +57,8 @@ export default function RegistrarCarta() {
   function confirmar() {
     if (!partida || !venda) return;
     salvarPartida(aplicarVenda(partida, venda));
-    router.back();
+    liberarSaida();
+    voltar();
   }
 
   function conferirDigitado(valor: string) {
@@ -60,7 +77,6 @@ export default function RegistrarCarta() {
       <Cabecalho
         titulo="Registrar carta"
         subtitulo={venda.tipo === 'obrigatorio' ? 'Repescagem cheia' : 'Vendido!'}
-        semVoltar
       />
 
       <ScrollView contentContainerStyle={styles.rolagem} keyboardShouldPersistTaps="handled" bounces={false}>

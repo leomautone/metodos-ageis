@@ -1,8 +1,7 @@
-import type { ImageSourcePropType } from 'react-native';
-
 // Ilustrações das cartas, exportadas do Figma (página "Cartas — 60 personagens").
 // Os personagens que ainda não estão aqui aparecem com um marcador no lugar da imagem.
-export const IMAGENS: Partial<Record<string, ImageSourcePropType>> = {
+// Cada require vira o id numérico do arquivo no bundle.
+export const IMAGENS: Partial<Record<string, number>> = {
   'ANI-001': require('../../assets/personagens/ANI-001.jpg'),
   'ANI-002': require('../../assets/personagens/ANI-002.jpg'),
   'ANI-003': require('../../assets/personagens/ANI-003.jpg'),

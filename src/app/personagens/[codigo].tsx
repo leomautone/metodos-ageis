@@ -1,9 +1,10 @@
 import { LinearGradient } from 'expo-linear-gradient';
-import { router, useLocalSearchParams } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useLocalSearchParams } from 'expo-router';
+import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { efeitoHabilidade, nomeHabilidade } from '@/batalha/narracao';
+import { BotaoVoltar } from '@/components/BotaoVoltar';
 import { Cabecalho } from '@/components/Cabecalho';
 import { HabitatTag } from '@/components/HabitatTag';
 import { ImagemPersonagem } from '@/components/ImagemPersonagem';
@@ -24,7 +25,7 @@ const ATRIBUTOS = [
 export default function DetalhePersonagem() {
   const { codigo } = useLocalSearchParams<{ codigo: string }>();
   const p = buscarPersonagem(codigo ?? '');
-  const { top, bottom } = useSafeAreaInsets();
+  const { bottom } = useSafeAreaInsets();
 
   if (!p) {
     return (
@@ -99,15 +100,7 @@ export default function DetalhePersonagem() {
         </View>
       </ScrollView>
 
-      <Pressable
-        onPress={() => router.back()}
-        accessibilityRole="button"
-        accessibilityLabel="Voltar"
-        style={[styles.voltar, { top: top + 8 }]}
-        hitSlop={8}
-      >
-        <Text style={styles.seta}>‹</Text>
-      </Pressable>
+      <BotaoVoltar />
     </View>
   );
 }
@@ -129,23 +122,6 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 140,
-  },
-  voltar: {
-    position: 'absolute',
-    left: 16,
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: 'rgba(21,19,28,0.7)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  seta: {
-    fontFamily: fontes.texto,
-    fontSize: 30,
-    lineHeight: 34,
-    color: cores.douradoClaro,
-    marginTop: -2,
   },
   margem: {
     paddingHorizontal: 24,

@@ -40,8 +40,8 @@ export default function RootLayout() {
           contentStyle: { backgroundColor: cores.fundo },
         }}
       >
+        {/* Sem gesto de arrastar: sair do registro passa sempre pela confirmação. */}
         <Stack.Screen name="partida/registrar" options={{ gestureEnabled: false }} />
-        <Stack.Screen name="personagens/ler" options={{ presentation: 'modal' }} />
       </Stack>
     </>
   );

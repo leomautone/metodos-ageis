@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Image } from 'expo-image';
+import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 
 import { IMAGENS } from '@/data/imagens';
 import { buscarPersonagem } from '@/data/personagens';
@@ -12,13 +13,23 @@ type Props = {
 };
 
 // Ilustração do personagem. Sem imagem, mostra a inicial no lugar.
+// Usa expo-image: reduz a ilustração ao tamanho da tela, guarda em cache e
+// não troca a imagem errada quando a lista recicla as linhas.
 export function ImagemPersonagem({ codigo, style, apagada }: Props) {
   const fonte = IMAGENS[codigo];
   const nome = buscarPersonagem(codigo)?.nome ?? codigo;
   return (
     <View style={[styles.caixa, style]}>
       {fonte ? (
-        <Image source={fonte} style={styles.imagem} resizeMode="cover" accessibilityLabel={nome} />
+        <Image
+          source={fonte}
+          style={styles.imagem}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={codigo}
+          transition={120}
+          accessibilityLabel={nome}
+        />
       ) : (
         <View style={styles.marcador}>
           <Text style={styles.inicial} adjustsFontSizeToFit numberOfLines={1}>

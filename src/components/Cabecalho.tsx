@@ -7,28 +7,31 @@ import { cores, fontes } from '@/theme';
 type Props = {
   titulo: string;
   subtitulo?: string;
-  // Sem voltar, ex.: telas em que sair no meio quebraria o fluxo.
-  semVoltar?: boolean;
+  // Troca o "voltar" padrão, ex.: pedir confirmação antes de sair.
   onVoltar?: () => void;
 };
 
+// Volta para a tela anterior; sem histórico (ex.: app reaberto), vai para o Início.
+export function voltar() {
+  if (router.canGoBack()) router.back();
+  else router.replace('/');
+}
+
 // Cabeçalho das telas internas: voltar, título em Cinzel, subtítulo e filete dourado.
-export function Cabecalho({ titulo, subtitulo, semVoltar, onVoltar }: Props) {
+export function Cabecalho({ titulo, subtitulo, onVoltar }: Props) {
   const { top } = useSafeAreaInsets();
   return (
     <View style={[styles.cabecalho, { paddingTop: top + 8 }]}>
       <View style={styles.linha}>
-        {!semVoltar ? (
-          <Pressable
-            onPress={onVoltar ?? (() => router.back())}
-            accessibilityRole="button"
-            accessibilityLabel="Voltar"
-            hitSlop={12}
-            style={styles.voltar}
-          >
-            <Text style={styles.seta}>‹</Text>
-          </Pressable>
-        ) : null}
+        <Pressable
+          onPress={onVoltar ?? voltar}
+          accessibilityRole="button"
+          accessibilityLabel="Voltar"
+          hitSlop={12}
+          style={styles.voltar}
+        >
+          <Text style={styles.seta}>‹</Text>
+        </Pressable>
         <Text style={styles.titulo} numberOfLines={1}>
           {titulo}
         </Text>
