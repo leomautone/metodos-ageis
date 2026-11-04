@@ -23,9 +23,22 @@ export type Venda = {
   codigo: string;
   jogadorId: number | null; // null = foi para a repescagem
   valor: number;
-  tipo: 'lance' | 'repescagem' | 'obrigatorio';
+  // escolhaRepescagem = o jogador escolheu; sobraRepescagem = ninguém quis e ficou com ele.
+  tipo: 'lance' | 'repescagem' | 'obrigatorio' | 'escolhaRepescagem' | 'sobraRepescagem';
   // Rolagens de dado do desempate, quando houve (jogadorId → resultados).
   dados?: Record<number, number[]>;
+};
+
+// Andamento da distribuição da repescagem, depois do leilão.
+export type Distribuicao = {
+  // Jogadores com vaga, de quem tem mais dinheiro para quem tem menos.
+  ordem: number[];
+  // Posição em "ordem" de quem escolhe agora.
+  vez: number;
+  // Quantos passaram seguidos, sem escolher ninguém.
+  passes: number;
+  // Rolagens de dado do desempate da ordem, quando houve.
+  dados: Record<number, number[]> | null;
 };
 
 export type Partida = {
@@ -39,6 +52,7 @@ export type Partida = {
   vendas: Venda[];
   // Venda fechada no leilão esperando o registro da carta (QR).
   pendente: Venda | null;
+  distribuicao: Distribuicao | null;
   // Chances antes da luta e a batalha sorteada, depois do leilão.
   batalha: {
     chances: Record<number, number>;
@@ -92,7 +106,7 @@ export function criarPartida(nomes: string[]): Partida {
     time: [],
   }));
   const fila = embaralhar(PERSONAGENS.map((p) => p.codigo)).slice(0, nomes.length * TAMANHO_TIME);
-  return { jogadores, fila, indiceAtual: 0, repescagem: [], vendas: [], pendente: null, batalha: null };
+  return { jogadores, fila, indiceAtual: 0, repescagem: [], vendas: [], pendente: null, distribuicao: null, batalha: null };
 }
 
 // Os lances andam de R$ 1 em R$ 1, então o valor é sempre inteiro.
@@ -108,13 +122,15 @@ export function buscarJogador(partida: Partida, id: number | null) {
 export function rotaDaPartida(partida: Partida) {
   if (partida.pendente) return '/partida/registrar' as const;
   if (partida.indiceAtual < partida.fila.length) return '/partida/leilao' as const;
+  if (partida.repescagem.length > 0) return '/partida/repescagem' as const;
   if (!partida.batalha) return '/partida/times' as const;
   return '/partida/batalha' as const;
 }
 
 export function descreverFase(partida: Partida) {
   const n = `${partida.jogadores.length} jogadores`;
-  if (partida.indiceAtual < partida.fila.length || partida.pendente) return `Leilão em andamento · ${n}`;
+  if (partida.indiceAtual < partida.fila.length) return `Leilão em andamento · ${n}`;
+  if (partida.repescagem.length > 0) return `Repescagem em andamento · ${n}`;
   if (!partida.batalha) return `Times prontos · ${n}`;
   return `Batalha em andamento · ${n}`;
 }

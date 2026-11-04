@@ -1,5 +1,5 @@
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -17,6 +17,12 @@ export default function Times() {
   const partida = usePartida();
   const { bottom } = useSafeAreaInsets();
   const [calculando, setCalculando] = useState(false);
+
+  // Time só fica completo depois da repescagem.
+  const faltaRepescagem = (partida?.repescagem.length ?? 0) > 0;
+  useEffect(() => {
+    if (faltaRepescagem) router.replace('/partida/repescagem');
+  }, [faltaRepescagem]);
 
   if (!partida) {
     return (
@@ -78,13 +84,6 @@ export default function Times() {
             </View>
           </View>
         ))}
-
-        {partida.repescagem.length > 0 ? (
-          <Text style={styles.aviso}>
-            Ficaram na repescagem: {partida.repescagem.map((c) => buscarPersonagem(c)?.nome).join(', ')}. A
-            distribuição da repescagem ainda não está no app.
-          </Text>
-        ) : null}
       </ScrollView>
 
       <View style={[styles.rodape, { paddingBottom: bottom + 16 }]}>

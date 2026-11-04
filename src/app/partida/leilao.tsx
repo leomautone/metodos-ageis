@@ -49,9 +49,10 @@ export default function Leilao() {
   });
 
   const concluido = partida !== null && leilaoConcluido(partida) && !partida.pendente;
+  const sobrouRepescagem = (partida?.repescagem.length ?? 0) > 0;
   useEffect(() => {
-    if (concluido) router.replace('/partida/times');
-  }, [concluido]);
+    if (concluido) router.replace(sobrouRepescagem ? '/partida/repescagem' : '/partida/times');
+  }, [concluido, sobrouRepescagem]);
 
   if (!partida || concluido) {
     return (

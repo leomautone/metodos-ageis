@@ -14,6 +14,11 @@ import { aplicarVenda } from '@/partida/leilao';
 import { buscarJogador, formatarReais, obterPartida, salvarPartida, usePartida } from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
+const TITULO_REPESCAGEM: Record<string, string> = {
+  escolhaRepescagem: 'Escolhido na repescagem',
+  sobraRepescagem: 'Sobrou da repescagem',
+};
+
 // Registro por QR (SCRUM-20): quem levou o personagem escaneia a carta,
 // o app confere o código, põe no time e desconta o valor.
 export default function RegistrarCarta() {
@@ -25,7 +30,9 @@ export default function RegistrarCarta() {
   // Sair sem confirmar (setinha ou botão voltar do Android) pede confirmação
   // e desfaz a venda: o personagem volta para o leilão e ninguém paga nada.
   const liberarSaida = usePreventRemove(!!partida?.pendente, ({ repeat }) => {
-    Alert.alert('Desfazer a venda?', 'O personagem volta para o leilão e ninguém paga nada.', [
+    const daRepescagem = TITULO_REPESCAGEM[obterPartida()?.pendente?.tipo ?? ''] !== undefined;
+    const destino = daRepescagem ? 'a repescagem' : 'o leilão';
+    Alert.alert('Desfazer a venda?', `O personagem volta para ${destino} e ninguém paga nada.`, [
       { text: 'Continuar registrando', style: 'cancel' },
       {
         text: 'Desfazer venda',
@@ -76,7 +83,7 @@ export default function RegistrarCarta() {
     <KeyboardAvoidingView style={styles.tela} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <Cabecalho
         titulo="Registrar carta"
-        subtitulo={venda.tipo === 'obrigatorio' ? 'Repescagem cheia' : 'Vendido!'}
+        subtitulo={TITULO_REPESCAGEM[venda.tipo] ?? (venda.tipo === 'obrigatorio' ? 'Repescagem cheia' : 'Vendido!')}
       />
 
       <ScrollView contentContainerStyle={styles.rolagem} keyboardShouldPersistTaps="handled" bounces={false}>

@@ -32,21 +32,21 @@ export function podeDarLance(jogador: Jogador, valor: number, lance: Lance | nul
   );
 }
 
-function rolarDado() {
-  return Math.floor(Math.random() * 6) + 1;
+export type Aleatorio = () => number;
+
+export function rolarDado(aleatorio: Aleatorio = Math.random) {
+  return Math.floor(aleatorio() * 6) + 1;
 }
 
-// Repescagem cheia: vai para quem tem mais vagas no time.
-// Empate: os empatados jogam o dado e o MENOR fica (repete se empatar de novo).
-function escolherObrigatorio(jogadores: Jogador[]) {
-  const maxVagas = Math.max(...jogadores.map(vagas));
-  let candidatos = jogadores.filter((j) => vagas(j) === maxVagas).map((j) => j.id);
+// Os empatados jogam o dado e o MENOR fica (repete se empatar de novo).
+export function desempatarMenorDado(empatados: number[], aleatorio: Aleatorio = Math.random) {
+  let candidatos = empatados;
   if (candidatos.length === 1) return { jogadorId: candidatos[0] };
 
   const dados: Record<number, number[]> = {};
   while (candidatos.length > 1) {
     const rodada = candidatos.map((id) => {
-      const valor = rolarDado();
+      const valor = rolarDado(aleatorio);
       (dados[id] ??= []).push(valor);
       return { id, valor };
     });
@@ -54,6 +54,12 @@ function escolherObrigatorio(jogadores: Jogador[]) {
     candidatos = rodada.filter((r) => r.valor === menor).map((r) => r.id);
   }
   return { jogadorId: candidatos[0], dados };
+}
+
+// Repescagem cheia: vai para quem tem mais vagas no time; empate no dado.
+function escolherObrigatorio(jogadores: Jogador[]) {
+  const maxVagas = Math.max(...jogadores.map(vagas));
+  return desempatarMenorDado(jogadores.filter((j) => vagas(j) === maxVagas).map((j) => j.id));
 }
 
 // Decide como o personagem da vez sai do leilão, sem mexer em saldo nem time.
@@ -81,20 +87,33 @@ export function encerrarPersonagem(partida: Partida, lance: Lance | null) {
   return { partida: aplicarVenda(partida, venda), venda };
 }
 
-// Registra a venda: desconta o valor, põe no time e passa para o próximo personagem.
+// Registra a venda: desconta o valor e põe no time. No leilão, passa para o
+// próximo personagem; na repescagem, tira o personagem da lista e passa a vez.
 export function aplicarVenda(partida: Partida, venda: Venda): Partida {
   const jogadores = partida.jogadores.map((j) =>
     j.id === venda.jogadorId
       ? { ...j, saldo: j.saldo - venda.valor, time: [...j.time, venda.codigo] }
       : j,
   );
+  const base = { ...partida, jogadores, vendas: [...partida.vendas, venda], pendente: null };
+
+  if (venda.tipo === 'escolhaRepescagem' || venda.tipo === 'sobraRepescagem') {
+    const d = partida.distribuicao;
+    return {
+      ...base,
+      repescagem: partida.repescagem.filter((c) => c !== venda.codigo),
+      distribuicao: d && {
+        ...d,
+        passes: 0,
+        vez: venda.tipo === 'escolhaRepescagem' ? d.ordem.indexOf(venda.jogadorId!) + 1 : d.vez,
+      },
+    };
+  }
+
   return {
-    ...partida,
-    jogadores,
+    ...base,
     repescagem: venda.jogadorId === null ? [...partida.repescagem, venda.codigo] : partida.repescagem,
     indiceAtual: partida.indiceAtual + 1,
-    vendas: [...partida.vendas, venda],
-    pendente: null,
   };
 }
 
