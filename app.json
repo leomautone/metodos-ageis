@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "All-in Draft",
-    "slug": "all-in-draft",
+    "slug": "metodos-ageis-ap2",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -16,7 +16,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -38,6 +41,27 @@
     "backgroundColor": "#15131C",
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "c460f620-16c1-4454-8dcb-744195c0f8da"
+      }
+    },
+    "owner": "leocamero",
+    "runtimeVersion": {
+      "policy": "sdkVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/c460f620-16c1-4454-8dcb-744195c0f8da"
+    },
+    "platforms": [
+      "ios",
+      "android"
+    ]
   }
 }
