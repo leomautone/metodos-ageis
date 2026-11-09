@@ -7,6 +7,7 @@ import {
   leilaoConcluido,
   podeComprar,
   totalLeiloes,
+  vendaObrigatoria,
   venderCarta,
 } from '../leilao';
 import { criarPartida, type Jogador, type Partida } from '../partida';
@@ -15,12 +16,6 @@ function comTimes(times: string[][], saldos?: number[], repescagem: string[] = [
   const p = criarPartida(times.map((_, i) => `J${i + 1}`));
   const jogadores: Jogador[] = p.jogadores.map((j, i) => ({ ...j, time: times[i], saldo: saldos?.[i] ?? j.saldo }));
   return { ...p, jogadores, repescagem };
-}
-
-// Cada valor v (0 a 1) vira o dado floor(v × 6) + 1.
-function sequencia(...valores: number[]) {
-  let i = 0;
-  return () => valores[i++ % valores.length];
 }
 
 describe('rodadas do leilão', () => {
@@ -67,21 +62,30 @@ describe('venda na mesa', () => {
 describe('sem lance', () => {
   it('vai para a repescagem enquanto ela tem menos de 3', () => {
     const p = comTimes([[], []], undefined, ['ANI-001', 'ANI-002']);
-    const venda = cartaSemLance(p, 'ANI-011');
-    expect(venda).toMatchObject({ jogadorId: null, tipo: 'repescagem' });
-    const depois = aplicarVenda(p, venda);
+    const r = cartaSemLance(p, 'ANI-011');
+    expect(r).toMatchObject({ tipo: 'venda', venda: { jogadorId: null, tipo: 'repescagem' } });
+    if (r.tipo !== 'venda') throw new Error('esperava venda');
+    const depois = aplicarVenda(p, r.venda);
     expect(depois.repescagem).toEqual(['ANI-001', 'ANI-002', 'ANI-011']);
     expect(depois.indiceAtual).toBe(1);
   });
 
-  it('com a repescagem cheia, vai para quem tem mais vagas por R$ 1', () => {
+  it('com a repescagem cheia, vai direto para quem tem mais vagas, por R$ 1', () => {
     const p = comTimes([['a', 'b'], ['c']], undefined, ['x', 'y', 'z']);
-    expect(cartaSemLance(p, 'ANI-011')).toMatchObject({ jogadorId: 2, valor: 1, tipo: 'obrigatorio' });
+    expect(cartaSemLance(p, 'ANI-011')).toMatchObject({
+      tipo: 'venda',
+      venda: { jogadorId: 2, valor: 1, tipo: 'obrigatorio' },
+    });
   });
 
-  it('no empate de vagas, o menor dado fica com ele; grátis com saldo zero', () => {
-    const p = comTimes([['a'], ['b']], [0, 0], ['x', 'y', 'z']);
-    const venda = cartaSemLance(p, 'ANI-011', sequencia(0.9, 0.1));
-    expect(venda).toMatchObject({ jogadorId: 2, valor: 0, dados: { 1: [6], 2: [1] } });
+  it('com empate em vagas, manda para a roleta só os empatados', () => {
+    const p = comTimes([['a'], ['b'], ['c', 'd']], undefined, ['x', 'y', 'z']);
+    expect(cartaSemLance(p, 'ANI-011')).toEqual({ tipo: 'roleta', candidatos: [1, 2] });
+  });
+
+  it('a carta da roleta custa R$ 1, grátis com saldo zero', () => {
+    const p = comTimes([['a'], ['b']], [0, 7], ['x', 'y', 'z']);
+    expect(vendaObrigatoria(p, 'ANI-011', 1)).toMatchObject({ jogadorId: 1, valor: 0, tipo: 'obrigatorio' });
+    expect(vendaObrigatoria(p, 'ANI-011', 2)).toMatchObject({ jogadorId: 2, valor: 1 });
   });
 });

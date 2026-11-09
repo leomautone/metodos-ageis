@@ -9,6 +9,7 @@ import { Cabecalho } from '@/components/Cabecalho';
 import { Cronometro } from '@/components/Cronometro';
 import { ImagemPersonagem } from '@/components/ImagemPersonagem';
 import { LeitorQR } from '@/components/LeitorQR';
+import { Roleta } from '@/components/Roleta';
 import { Rotulo } from '@/components/Rotulo';
 import { normalizarCodigo } from '@/data/formatar';
 import { buscarPersonagem } from '@/data/personagens';
@@ -22,6 +23,7 @@ import {
   TEMPO_LEILAO_MS,
   totalLeiloes,
   vagas,
+  vendaObrigatoria,
   venderCarta,
 } from '@/partida/leilao';
 import {
@@ -52,6 +54,8 @@ export default function Leilao() {
   const [valor, setValor] = useState(0);
   // Sem lance com a repescagem cheia: mostra para quem vai antes de confirmar.
   const [obrigatorio, setObrigatorio] = useState<Venda | null>(null);
+  // Sem lance, repescagem cheia e empate em vagas: a roleta decide entre esses jogadores.
+  const [roleta, setRoleta] = useState<number[] | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
 
   // Atualiza o relógio várias vezes por segundo enquanto ele corre.
@@ -132,6 +136,7 @@ export default function Leilao() {
     setComprador(null);
     setValor(0);
     setObrigatorio(null);
+    setRoleta(null);
     setAviso(mensagem);
   }
 
@@ -155,19 +160,16 @@ export default function Leilao() {
 
   function semLance() {
     if (!partida || !codigo) return;
-    const venda = cartaSemLance(partida, codigo);
-    // Repescagem cheia: quem fica com a carta sai no dado, então mostra antes.
-    if (venda.tipo === 'obrigatorio') setObrigatorio(venda);
-    else registrar(venda);
+    const resultado = cartaSemLance(partida, codigo);
+    if (resultado.tipo === 'roleta') setRoleta(resultado.candidatos);
+    // Repescagem cheia: mostra para quem a carta vai antes de confirmar.
+    else if (resultado.venda.tipo === 'obrigatorio') setObrigatorio(resultado.venda);
+    else registrar(resultado.venda);
   }
 
   const total = totalLeiloes(partida);
   const donoObrigatorio = obrigatorio ? buscarJogador(partida, obrigatorio.jogadorId) : undefined;
-  const dadosObrigatorio = obrigatorio?.dados
-    ? Object.entries(obrigatorio.dados)
-        .map(([id, valores]) => `${buscarJogador(partida, Number(id))?.nome} ${valores.join('→')}`)
-        .join(' · ')
-    : null;
+  const naRoleta = roleta ? partida.jogadores.filter((j) => roleta.includes(j.id)) : [];
 
   return (
     <View style={styles.tela}>
@@ -255,9 +257,6 @@ export default function Leilao() {
                   Repescagem cheia: {carta?.nome} vai para {donoObrigatorio.nome}, que tem mais vagas, por{' '}
                   {formatarReais(obrigatorio.valor)}.
                 </Text>
-                {dadosObrigatorio ? (
-                  <Text style={styles.legenda}>Desempate no dado, o menor fica: {dadosObrigatorio}</Text>
-                ) : null}
               </View>
             ) : (
               <>
@@ -302,6 +301,15 @@ export default function Leilao() {
           </>
         )}
       </ScrollView>
+
+      <Roleta
+        visivel={!!roleta && !!codigo}
+        carta={carta?.nome ?? ''}
+        jogadores={naRoleta}
+        valor={(j) => (codigo ? vendaObrigatoria(partida, codigo, j.id).valor : 0)}
+        onConfirmar={(id) => codigo && registrar(vendaObrigatoria(partida, codigo, id))}
+        onCancelar={() => setRoleta(null)}
+      />
 
       <View style={[styles.rodape, { paddingBottom: bottom + 16 }]}>
         {fase === 'relogio' ? (

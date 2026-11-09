@@ -65,20 +65,33 @@ export function venderCarta(codigo: string, jogadorId: number, valor: number): V
   return { codigo, jogadorId, valor, tipo: 'lance' };
 }
 
-// Ninguém deu lance: vai para a repescagem (no máximo 3). Com a repescagem cheia,
-// vai obrigatoriamente para quem tem mais vagas (empate no dado, o menor fica),
-// por R$ 1, grátis com saldo zero.
-export function cartaSemLance(partida: Partida, codigo: string, aleatorio: Aleatorio = Math.random): Venda {
-  if (partida.repescagem.length < MAX_REPESCAGEM) {
-    return { codigo, jogadorId: null, valor: 0, tipo: 'repescagem' };
-  }
+// Com a repescagem cheia, a carta sem lance vai obrigatoriamente para quem
+// tem mais vagas no time. Todos esses são candidatos; empate vai para a roleta.
+export function candidatosObrigatorio(partida: Partida) {
   const maxVagas = Math.max(...partida.jogadores.map(vagas));
-  const { jogadorId, dados } = desempatarMenorDado(
-    partida.jogadores.filter((j) => vagas(j) === maxVagas).map((j) => j.id),
-    aleatorio,
-  );
+  return partida.jogadores.filter((j) => vagas(j) === maxVagas).map((j) => j.id);
+}
+
+// Carta obrigatória: R$ 1, grátis com saldo zero.
+export function vendaObrigatoria(partida: Partida, codigo: string, jogadorId: number): Venda {
   const saldo = partida.jogadores.find((j) => j.id === jogadorId)!.saldo;
-  return { codigo, jogadorId, valor: saldo > 0 ? CUSTO_OBRIGATORIO : 0, tipo: 'obrigatorio', dados };
+  return { codigo, jogadorId, valor: saldo > 0 ? CUSTO_OBRIGATORIO : 0, tipo: 'obrigatorio' };
+}
+
+export type ResultadoSemLance =
+  | { tipo: 'venda'; venda: Venda }
+  // Empate em vagas: a tela gira a roleta entre esses jogadores.
+  | { tipo: 'roleta'; candidatos: number[] };
+
+// Ninguém deu lance: vai para a repescagem (no máximo 3). Com ela cheia, vai para
+// quem tem mais vagas; se mais de um empatar, quem decide é a roleta.
+export function cartaSemLance(partida: Partida, codigo: string): ResultadoSemLance {
+  if (partida.repescagem.length < MAX_REPESCAGEM) {
+    return { tipo: 'venda', venda: { codigo, jogadorId: null, valor: 0, tipo: 'repescagem' } };
+  }
+  const candidatos = candidatosObrigatorio(partida);
+  if (candidatos.length > 1) return { tipo: 'roleta', candidatos };
+  return { tipo: 'venda', venda: vendaObrigatoria(partida, codigo, candidatos[0]) };
 }
 
 // Registra a venda: desconta o valor e põe no time. No leilão, passa para o
