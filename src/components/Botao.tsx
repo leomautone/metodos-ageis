@@ -1,17 +1,19 @@
-import { Pressable, StyleSheet, Text } from 'react-native';
+import { Pressable, StyleSheet, Text, type StyleProp, type ViewStyle } from 'react-native';
 
 import { cores, fontes } from '@/theme';
 
 type Props = {
   titulo: string;
   onPress?: () => void;
-  // Texto pequeno embaixo do título, ex.: "em breve".
-  detalhe?: string;
+  // primario = dourado cheio; secundario = contorno dourado.
+  variante?: 'primario' | 'secundario';
   desativado?: boolean;
+  style?: StyleProp<ViewStyle>;
 };
 
-export function Botao({ titulo, onPress, detalhe, desativado }: Props) {
+export function Botao({ titulo, onPress, variante = 'primario', desativado, style }: Props) {
   const inativo = desativado || !onPress;
+  const primario = variante === 'primario';
   return (
     <Pressable
       onPress={onPress}
@@ -20,45 +22,54 @@ export function Botao({ titulo, onPress, detalhe, desativado }: Props) {
       accessibilityState={{ disabled: inativo }}
       style={({ pressed }) => [
         styles.botao,
-        pressed && styles.pressionado,
+        primario ? styles.primario : styles.secundario,
+        pressed && (primario ? styles.primarioPressionado : styles.secundarioPressionado),
         inativo && styles.inativo,
+        style,
       ]}
     >
-      <Text style={[styles.titulo, inativo && styles.textoInativo]}>{titulo}</Text>
-      {detalhe ? <Text style={styles.detalhe}>{detalhe}</Text> : null}
+      <Text
+        style={[styles.titulo, { color: primario ? cores.fundo : cores.douradoClaro }]}
+        numberOfLines={1}
+        adjustsFontSizeToFit
+      >
+        {titulo}
+      </Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   botao: {
-    borderColor: cores.dourado,
-    borderWidth: 2,
-    borderRadius: 6,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
+    height: 52,
+    borderRadius: 12,
+    paddingHorizontal: 12,
     alignItems: 'center',
-    backgroundColor: cores.painel,
+    justifyContent: 'center',
   },
-  pressionado: {
+  primario: {
     backgroundColor: cores.dourado,
+    borderColor: cores.douradoClaro,
+    borderWidth: 1,
+  },
+  secundario: {
+    backgroundColor: cores.painel,
+    borderColor: cores.dourado,
+    borderWidth: 1.5,
+  },
+  primarioPressionado: {
+    backgroundColor: cores.douradoClaro,
+  },
+  secundarioPressionado: {
+    backgroundColor: cores.painelClaro,
   },
   inativo: {
-    borderColor: cores.desativado,
+    opacity: 0.4,
   },
   titulo: {
-    fontFamily: fontes.titulo,
-    fontSize: 18,
-    color: cores.douradoClaro,
-    letterSpacing: 1,
-  },
-  textoInativo: {
-    color: cores.desativado,
-  },
-  detalhe: {
-    fontFamily: fontes.texto,
-    fontSize: 12,
-    color: cores.textoSuave,
-    marginTop: 2,
+    fontFamily: fontes.numeroForte,
+    fontSize: 17,
+    letterSpacing: 1.02,
+    textTransform: 'uppercase',
   },
 });
