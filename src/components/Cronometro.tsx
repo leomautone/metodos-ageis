@@ -8,54 +8,51 @@ type Props = {
   // Fração do tempo que ainda resta (1 = cheio, 0 = acabou).
   fracao: number;
   urgente?: boolean;
+  // 124 no Figma; maior quando o relógio é o centro da tela.
+  tamanho?: number;
 };
 
-const TAMANHO = 124;
-const ESPESSURA = 8.68;
-const RAIO = (TAMANHO - ESPESSURA) / 2;
-const VOLTA = 2 * Math.PI * RAIO;
-
 // Anel do cronômetro do leilão: trilho escuro e arco dourado do tempo restante.
-export function Cronometro({ segundos, fracao, urgente }: Props) {
+// Espessura e fontes crescem na proporção do Figma (124 px).
+export function Cronometro({ segundos, fracao, urgente, tamanho = 124 }: Props) {
+  const escala = tamanho / 124;
+  const espessura = 8.68 * escala;
+  const raio = (tamanho - espessura) / 2;
+  const volta = 2 * Math.PI * raio;
+  const centro = tamanho / 2;
   return (
-    <View style={styles.caixa} accessibilityLabel={`${segundos} segundos`}>
-      <Svg width={TAMANHO} height={TAMANHO} style={StyleSheet.absoluteFill}>
-        <Circle cx={TAMANHO / 2} cy={TAMANHO / 2} r={RAIO} stroke={cores.painelClaro} strokeWidth={ESPESSURA} fill="none" />
+    <View style={[styles.caixa, { width: tamanho, height: tamanho }]} accessibilityLabel={`${segundos} segundos`}>
+      <Svg width={tamanho} height={tamanho} style={StyleSheet.absoluteFill}>
+        <Circle cx={centro} cy={centro} r={raio} stroke={cores.painelClaro} strokeWidth={espessura} fill="none" />
         <Circle
-          cx={TAMANHO / 2}
-          cy={TAMANHO / 2}
-          r={RAIO}
+          cx={centro}
+          cy={centro}
+          r={raio}
           stroke={urgente ? cores.erro : cores.dourado}
-          strokeWidth={ESPESSURA}
+          strokeWidth={espessura}
           fill="none"
-          strokeDasharray={`${VOLTA} ${VOLTA}`}
-          strokeDashoffset={VOLTA * (1 - Math.max(0, Math.min(1, fracao)))}
-          transform={`rotate(-90 ${TAMANHO / 2} ${TAMANHO / 2})`}
+          strokeDasharray={`${volta} ${volta}`}
+          strokeDashoffset={volta * (1 - Math.max(0, Math.min(1, fracao)))}
+          transform={`rotate(-90 ${centro} ${centro})`}
         />
       </Svg>
-      <Text style={styles.numero}>{segundos}</Text>
-      <Text style={styles.rotulo}>SEGUNDOS</Text>
+      <Text style={[styles.numero, { fontSize: 44 * escala, lineHeight: 54 * escala }]}>{segundos}</Text>
+      <Text style={[styles.rotulo, { fontSize: 10 * escala, letterSpacing: 0.8 * escala }]}>SEGUNDOS</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   caixa: {
-    width: TAMANHO,
-    height: TAMANHO,
     alignItems: 'center',
     justifyContent: 'center',
   },
   numero: {
     fontFamily: fontes.numeroForte,
-    fontSize: 44,
-    lineHeight: 54,
     color: cores.douradoClaro,
   },
   rotulo: {
     fontFamily: fontes.numero,
-    fontSize: 10,
-    letterSpacing: 0.8,
     color: cores.textoSuave,
     marginTop: -4,
   },

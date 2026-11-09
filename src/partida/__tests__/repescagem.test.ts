@@ -11,7 +11,6 @@ function jogador(id: number, saldo: number, time: string[]): Jogador {
 function partida(jogadores: Jogador[], repescagem: string[]): Partida {
   return {
     jogadores,
-    fila: [],
     indiceAtual: 0,
     repescagem,
     vendas: [],

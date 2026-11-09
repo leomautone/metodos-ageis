@@ -18,7 +18,7 @@ import {
 } from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
-// Nova partida (SCRUM-19): 3 a 5 jogadores com nome e sorteio dos personagens.
+// Nova partida (SCRUM-19): 3 a 5 jogadores com nome. As cartas vêm do baralho da mesa.
 export default function NovaPartida() {
   const [nomes, setNomes] = useState<string[]>(['', '', '']);
   const { bottom } = useSafeAreaInsets();
@@ -37,7 +37,7 @@ export default function NovaPartida() {
     setNomes((atual) => atual.map((n, j) => (j === i ? texto : n)));
   }
 
-  function sortearEComecar() {
+  function comecar() {
     salvarPartida(criarPartida(limpos));
     router.replace('/partida/leilao');
   }
@@ -104,7 +104,7 @@ export default function NovaPartida() {
           <View style={styles.regra}>
             <Text style={styles.regraValor}>{totalPersonagens}</Text>
             <Text style={styles.regraTexto}>
-              personagens sorteados ({nomes.length} × {TAMANHO_TIME})
+              leilões de 20 s ({nomes.length} × {TAMANHO_TIME}), com as cartas da mesa
             </Text>
           </View>
         </View>
@@ -112,7 +112,7 @@ export default function NovaPartida() {
 
       <View style={[styles.rodape, { paddingBottom: bottom + 16 }]}>
         {erro ? <Text style={styles.erro}>{erro}</Text> : null}
-        <Botao titulo="Sortear e começar" onPress={sortearEComecar} desativado={!!erro} />
+        <Botao titulo="Começar partida" onPress={comecar} desativado={!!erro} />
       </View>
     </KeyboardAvoidingView>
   );

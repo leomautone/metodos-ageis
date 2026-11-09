@@ -1,7 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
 import type { ResultadoBatalha } from '@/batalha/motor';
-import { PERSONAGENS } from '@/data/personagens';
 
 // Estado da partida em andamento, compartilhado entre as telas.
 // Por enquanto fica só na memória: fechar o app perde a partida.
@@ -43,9 +42,7 @@ export type Distribuicao = {
 
 export type Partida = {
   jogadores: Jogador[];
-  // Personagens sorteados, na ordem em que vão a leilão.
-  fila: string[];
-  // Posição na fila do personagem em leilão agora.
+  // Quantos leilões já terminaram (o total é jogadores × 3).
   indiceAtual: number;
   // Personagens sem lance aguardando a repescagem (no máximo 3).
   repescagem: string[];
@@ -87,17 +84,7 @@ export function salvarPartida(nova: Partida | null) {
   avisar();
 }
 
-// Embaralha uma cópia da lista (Fisher-Yates).
-export function embaralhar<T>(lista: readonly T[]): T[] {
-  const copia = [...lista];
-  for (let i = copia.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [copia[i], copia[j]] = [copia[j], copia[i]];
-  }
-  return copia;
-}
-
-// Sorteia jogadores × 3 personagens entre os 30, já em ordem aleatória.
+// As cartas vêm do baralho físico: a partida começa só com os jogadores.
 export function criarPartida(nomes: string[]): Partida {
   const jogadores = nomes.map((nome, i) => ({
     id: i + 1,
@@ -105,8 +92,7 @@ export function criarPartida(nomes: string[]): Partida {
     saldo: SALDO_INICIAL,
     time: [],
   }));
-  const fila = embaralhar(PERSONAGENS.map((p) => p.codigo)).slice(0, nomes.length * TAMANHO_TIME);
-  return { jogadores, fila, indiceAtual: 0, repescagem: [], vendas: [], pendente: null, distribuicao: null, batalha: null };
+  return { jogadores, indiceAtual: 0, repescagem: [], vendas: [], pendente: null, distribuicao: null, batalha: null };
 }
 
 // Os lances andam de R$ 1 em R$ 1, então o valor é sempre inteiro.
@@ -121,7 +107,7 @@ export function buscarJogador(partida: Partida, id: number | null) {
 // Para onde "Continuar partida" leva.
 export function rotaDaPartida(partida: Partida) {
   if (partida.pendente) return '/partida/registrar' as const;
-  if (partida.indiceAtual < partida.fila.length) return '/partida/leilao' as const;
+  if (partida.indiceAtual < partida.jogadores.length * TAMANHO_TIME) return '/partida/leilao' as const;
   if (partida.repescagem.length > 0) return '/partida/repescagem' as const;
   if (!partida.batalha) return '/partida/times' as const;
   return '/partida/batalha' as const;
@@ -129,7 +115,7 @@ export function rotaDaPartida(partida: Partida) {
 
 export function descreverFase(partida: Partida) {
   const n = `${partida.jogadores.length} jogadores`;
-  if (partida.indiceAtual < partida.fila.length) return `Leilão em andamento · ${n}`;
+  if (partida.indiceAtual < partida.jogadores.length * TAMANHO_TIME) return `Leilão em andamento · ${n}`;
   if (partida.repescagem.length > 0) return `Repescagem em andamento · ${n}`;
   if (!partida.batalha) return `Times prontos · ${n}`;
   return `Batalha em andamento · ${n}`;
