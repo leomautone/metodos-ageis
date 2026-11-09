@@ -29,7 +29,8 @@ function comoCaiu(round: Round | undefined) {
   return `eliminado no round ${round}`;
 }
 
-// Resultado: o time vencedor, o personagem que ficou de pé e a classificação.
+// Resultado: o time vencedor, o personagem que ficou de pé, o pódio com a chance
+// que cada um tinha antes da luta e o acesso aos combates de cada round.
 export default function Resultado() {
   const partida = usePartida();
   const { top, bottom } = useSafeAreaInsets();
@@ -42,7 +43,8 @@ export default function Resultado() {
   const vencedor = buscarJogador(partida, resultado.vencedor);
   const heroi = resultado.sobreviventes[0];
   const p = heroi ? buscarPersonagem(heroi) : undefined;
-  const chance = vencedor ? (partida.batalha?.chances[vencedor.id] ?? 0) : 0;
+  const chances = partida.batalha?.chances ?? {};
+  const chance = vencedor ? (chances[vencedor.id] ?? 0) : 0;
 
   // A habilidade do herói, se ele chegou a usá-la na batalha.
   const usouHabilidade =
@@ -96,6 +98,12 @@ export default function Resultado() {
             </>
           ) : null}
 
+          {vencedor ? (
+            <Text style={styles.chanceHeroi}>
+              Chance de vitória antes da luta: <Text style={styles.chanceValor}>{formatarChance(chance)}</Text>
+            </Text>
+          ) : null}
+
           {vencedor && chance < LIMITE_ZEBRA ? (
             <View style={styles.zebra}>
               <Text style={styles.zebraTexto}>ZEBRA! Tinha {formatarChance(chance)} de chance</Text>
@@ -103,7 +111,7 @@ export default function Resultado() {
           ) : null}
         </View>
 
-        <Rotulo style={styles.rotulo}>Classificação</Rotulo>
+        <Rotulo style={styles.rotulo}>Pódio</Rotulo>
         <View style={styles.lista}>
           {classificacao.map((j, i) => {
             const venceu = j.id === vencedor?.id;
@@ -116,12 +124,15 @@ export default function Resultado() {
                 <Text style={styles.detalhe} numberOfLines={1}>
                   {venceu ? `${resultado.sobreviventes.map(nome).join(', ')} de pé` : comoCaiu(resultado.eliminacao[j.id])}
                 </Text>
+                <Text style={[styles.chance, venceu && styles.chanceVencedor]}>{formatarChance(chances[j.id] ?? 0)}</Text>
               </View>
             );
           })}
         </View>
+        <Text style={styles.legenda}>% = chance de vitória calculada antes da luta, em 2.000 simulações</Text>
 
         <View style={styles.botoes}>
+          <Botao titulo="Ver combates e eliminados" variante="secundario" onPress={() => router.push('/partida/combates')} />
           <Botao titulo="Nova partida" onPress={novaPartida} />
           <Botao titulo="Voltar ao início" variante="secundario" onPress={() => router.dismissTo('/')} style={styles.voltar} />
         </View>
@@ -236,11 +247,40 @@ const styles = StyleSheet.create({
     color: cores.texto,
   },
   detalhe: {
-    maxWidth: '60%',
+    maxWidth: '48%',
     fontFamily: fontes.texto,
     fontSize: 12,
     color: cores.textoSuave,
     textAlign: 'right',
+  },
+  chanceHeroi: {
+    fontFamily: fontes.texto,
+    fontSize: 13,
+    color: cores.textoSuave,
+    textAlign: 'center',
+    marginTop: 8,
+  },
+  chanceValor: {
+    fontFamily: fontes.numeroForte,
+    fontSize: 15,
+    color: cores.douradoClaro,
+  },
+  chance: {
+    width: 48,
+    fontFamily: fontes.numeroForte,
+    fontSize: 14,
+    color: cores.textoSuave,
+    textAlign: 'right',
+  },
+  chanceVencedor: {
+    color: cores.douradoClaro,
+  },
+  legenda: {
+    fontFamily: fontes.texto,
+    fontSize: 11,
+    color: cores.textoApagado,
+    textAlign: 'center',
+    marginTop: 8,
   },
   botoes: {
     gap: 8,
