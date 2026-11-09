@@ -38,28 +38,6 @@ export function conferirCarta(partida: Partida, codigo: string): string | null {
 
 export type Aleatorio = () => number;
 
-export function rolarDado(aleatorio: Aleatorio = Math.random) {
-  return Math.floor(aleatorio() * 6) + 1;
-}
-
-// Os empatados jogam o dado e o MENOR fica (repete se empatar de novo).
-export function desempatarMenorDado(empatados: number[], aleatorio: Aleatorio = Math.random) {
-  let candidatos = empatados;
-  if (candidatos.length === 1) return { jogadorId: candidatos[0] };
-
-  const dados: Record<number, number[]> = {};
-  while (candidatos.length > 1) {
-    const rodada = candidatos.map((id) => {
-      const valor = rolarDado(aleatorio);
-      (dados[id] ??= []).push(valor);
-      return { id, valor };
-    });
-    const menor = Math.min(...rodada.map((r) => r.valor));
-    candidatos = rodada.filter((r) => r.valor === menor).map((r) => r.id);
-  }
-  return { jogadorId: candidatos[0], dados };
-}
-
 // A carta foi vendida na mesa para esse jogador, por esse valor.
 export function venderCarta(codigo: string, jogadorId: number, valor: number): Venda {
   return { codigo, jogadorId, valor, tipo: 'lance' };
@@ -95,26 +73,17 @@ export function cartaSemLance(partida: Partida, codigo: string): ResultadoSemLan
 }
 
 // Registra a venda: desconta o valor e põe no time. No leilão, passa para o
-// próximo leilão; na repescagem, tira o personagem da lista e passa a vez.
+// próximo leilão; na repescagem, tira o personagem da lista.
 export function aplicarVenda(partida: Partida, venda: Venda): Partida {
   const jogadores = partida.jogadores.map((j) =>
     j.id === venda.jogadorId
       ? { ...j, saldo: j.saldo - venda.valor, time: [...j.time, venda.codigo] }
       : j,
   );
-  const base = { ...partida, jogadores, vendas: [...partida.vendas, venda], pendente: null };
+  const base = { ...partida, jogadores, vendas: [...partida.vendas, venda] };
 
-  if (venda.tipo === 'escolhaRepescagem' || venda.tipo === 'sobraRepescagem') {
-    const d = partida.distribuicao;
-    return {
-      ...base,
-      repescagem: partida.repescagem.filter((c) => c !== venda.codigo),
-      distribuicao: d && {
-        ...d,
-        passes: 0,
-        vez: venda.tipo === 'escolhaRepescagem' ? d.ordem.indexOf(venda.jogadorId!) + 1 : d.vez,
-      },
-    };
+  if (venda.tipo === 'lanceRepescagem' || venda.tipo === 'sobraRepescagem') {
+    return { ...base, repescagem: partida.repescagem.filter((c) => c !== venda.codigo) };
   }
 
   return {

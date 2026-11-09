@@ -22,22 +22,10 @@ export type Venda = {
   codigo: string;
   jogadorId: number | null; // null = foi para a repescagem
   valor: number;
-  // escolhaRepescagem = o jogador escolheu; sobraRepescagem = ninguém quis e ficou com ele.
-  tipo: 'lance' | 'repescagem' | 'obrigatorio' | 'escolhaRepescagem' | 'sobraRepescagem';
+  // lanceRepescagem = levou no leilão da repescagem; sobraRepescagem = ninguém deu lance e ficou com ele.
+  tipo: 'lance' | 'repescagem' | 'obrigatorio' | 'lanceRepescagem' | 'sobraRepescagem';
   // Rolagens de dado do desempate, quando houve (jogadorId → resultados).
   dados?: Record<number, number[]>;
-};
-
-// Andamento da distribuição da repescagem, depois do leilão.
-export type Distribuicao = {
-  // Jogadores com vaga, de quem tem mais dinheiro para quem tem menos.
-  ordem: number[];
-  // Posição em "ordem" de quem escolhe agora.
-  vez: number;
-  // Quantos passaram seguidos, sem escolher ninguém.
-  passes: number;
-  // Rolagens de dado do desempate da ordem, quando houve.
-  dados: Record<number, number[]> | null;
 };
 
 export type Partida = {
@@ -47,9 +35,8 @@ export type Partida = {
   // Personagens sem lance aguardando a repescagem (no máximo 3).
   repescagem: string[];
   vendas: Venda[];
-  // Venda fechada no leilão esperando o registro da carta (QR).
-  pendente: Venda | null;
-  distribuicao: Distribuicao | null;
+  // A ordem da repescagem já foi sorteada (o primeiro da lista é o da vez).
+  repescagemSorteada: boolean;
   // Chances antes da luta e a batalha sorteada, depois do leilão.
   batalha: {
     chances: Record<number, number>;
@@ -92,7 +79,7 @@ export function criarPartida(nomes: string[]): Partida {
     saldo: SALDO_INICIAL,
     time: [],
   }));
-  return { jogadores, indiceAtual: 0, repescagem: [], vendas: [], pendente: null, distribuicao: null, batalha: null };
+  return { jogadores, indiceAtual: 0, repescagem: [], vendas: [], repescagemSorteada: false, batalha: null };
 }
 
 // Os lances andam de R$ 1 em R$ 1, então o valor é sempre inteiro.
@@ -106,7 +93,6 @@ export function buscarJogador(partida: Partida, id: number | null) {
 
 // Para onde "Continuar partida" leva.
 export function rotaDaPartida(partida: Partida) {
-  if (partida.pendente) return '/partida/registrar' as const;
   if (partida.indiceAtual < partida.jogadores.length * TAMANHO_TIME) return '/partida/leilao' as const;
   if (partida.repescagem.length > 0) return '/partida/repescagem' as const;
   if (!partida.batalha) return '/partida/times' as const;

@@ -10,8 +10,10 @@ import { corDoJogador, cores, fontes } from '@/theme';
 
 type Props = {
   visivel: boolean;
-  // Nome da carta em jogo, para o título.
+  // Nome da carta em jogo.
   carta: string;
+  // Por que houve sorteio, ex.: "Repescagem cheia e empate em vagas".
+  motivo: string;
   // Os empatados, um por fatia.
   jogadores: Jogador[];
   // Valor que quem cair vai pagar (R$ 1, ou zero para quem não tem saldo).
@@ -39,7 +41,7 @@ function fatia(inicio: number, fim: number) {
 
 // Roleta do desempate: quem tocar gira, e todos veem em quem ela para.
 // Depois de girar não dá para girar de novo nem cancelar, só confirmar.
-export function Roleta({ visivel, carta, jogadores, valor, onConfirmar, onCancelar }: Props) {
+export function Roleta({ visivel, carta, motivo, jogadores, valor, onConfirmar, onCancelar }: Props) {
   // O valor animado vive no estado: o React não deixa ler ref durante a renderização.
   const [giro] = useState(() => new Animated.Value(0));
   const rotacao = useRef(0);
@@ -89,7 +91,7 @@ export function Roleta({ visivel, carta, jogadores, valor, onConfirmar, onCancel
         <Painel style={styles.painel}>
           <Text style={styles.titulo}>Roleta da sorte</Text>
           <Text style={styles.texto}>
-            Repescagem cheia e empate em vagas: a roleta decide quem fica com {carta}.
+            {motivo}: a roleta decide quem fica com {carta}.
           </Text>
 
           <Pressable

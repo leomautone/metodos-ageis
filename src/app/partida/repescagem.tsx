@@ -3,46 +3,72 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Avatar } from '@/components/Avatar';
 import { Botao } from '@/components/Botao';
 import { Cabecalho } from '@/components/Cabecalho';
+import { Cronometro } from '@/components/Cronometro';
+import { GradeJogadores } from '@/components/GradeJogadores';
 import { HabitatTag } from '@/components/HabitatTag';
 import { ImagemPersonagem } from '@/components/ImagemPersonagem';
+import { Roleta } from '@/components/Roleta';
 import { Rotulo } from '@/components/Rotulo';
+import { SeletorValor } from '@/components/SeletorValor';
 import { buscarPersonagem } from '@/data/personagens';
-import { vagas } from '@/partida/leilao';
-import { buscarJogador, formatarReais, salvarPartida, usePartida } from '@/partida/partida';
+import { aplicarVenda, podeComprar } from '@/partida/leilao';
+import { buscarJogador, formatarReais, salvarPartida, usePartida, type Jogador, type Venda } from '@/partida/partida';
 import {
-  custoRepescagem,
-  escolherPersonagem,
-  iniciarRepescagem,
-  jogadorDaVez,
-  passarVez,
+  cartaDaVez,
+  semLanceNaRepescagem,
+  sortearRepescagem,
+  TEMPO_REPESCAGEM_MS,
+  vendaSobra,
+  venderNaRepescagem,
 } from '@/partida/repescagem';
 import { cores, fontes } from '@/theme';
 
-// Repescagem (SCRUM-23): depois do leilão, quem ainda tem vaga escolhe entre os
-// personagens sem dono. Quem tem mais dinheiro escolhe primeiro.
+// Repescagem (SCRUM-23): os personagens sem lance voltam à mesa um de cada vez,
+// em ordem sorteada, com 10 s de lance. No fim, registra quem levou e por quanto.
 export default function Repescagem() {
   const partida = usePartida();
   const { bottom } = useSafeAreaInsets();
-  const [selecionado, setSelecionado] = useState<string | null>(null);
+  const [fase, setFase] = useState<'relogio' | 'registro'>('relogio');
+  const [fimEm, setFimEm] = useState<number | null>(null);
+  const [agora, setAgora] = useState(Date.now());
+  const [comprador, setComprador] = useState<number | null>(null);
+  const [valor, setValor] = useState(0);
+  // Sem lance: mostra quem fica com o personagem antes de confirmar.
+  const [sobra, setSobra] = useState<Venda | null>(null);
+  // Sem lance e empate em quem tem menos dinheiro: a roleta decide.
+  const [roleta, setRoleta] = useState<number[] | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
-  const terminou = partida !== null && partida.repescagem.length === 0 && !partida.pendente;
-  const semOrdem = partida !== null && !terminou && !partida.distribuicao;
+  const terminou = partida !== null && partida.repescagem.length === 0;
+  const semOrdem = partida !== null && !terminou && !partida.repescagemSorteada;
 
   useEffect(() => {
     if (terminou) router.replace('/partida/times');
   }, [terminou]);
 
-  // A ordem (e o dado do desempate) é sorteada uma vez só, ao entrar.
+  // A ordem dos personagens é sorteada uma vez só, ao entrar.
   useEffect(() => {
-    if (semOrdem && partida) salvarPartida(iniciarRepescagem(partida));
+    if (semOrdem && partida) salvarPartida(sortearRepescagem(partida));
   }, [semOrdem, partida]);
 
-  const vez = partida ? jogadorDaVez(partida) : null;
+  // Atualiza o relógio várias vezes por segundo enquanto ele corre.
+  useEffect(() => {
+    if (fimEm === null) return;
+    const intervalo = setInterval(() => setAgora(Date.now()), 100);
+    return () => clearInterval(intervalo);
+  }, [fimEm]);
 
-  if (!partida || !partida.distribuicao || !vez) {
+  // Tempo esgotado: passa para o registro.
+  useEffect(() => {
+    if (fimEm !== null && agora >= fimEm) encerrar();
+  });
+
+  const codigo = partida ? cartaDaVez(partida) : null;
+  const p = codigo ? buscarPersonagem(codigo) : undefined;
+
+  if (!partida || !partida.repescagemSorteada || !codigo || !p) {
     return (
       <View style={styles.tela}>
         <Cabecalho titulo="Repescagem" />
@@ -50,119 +76,165 @@ export default function Repescagem() {
     );
   }
 
-  const { ordem, dados } = partida.distribuicao;
-  const custo = custoRepescagem(vez);
-  const naFila = ordem
-    .map((id) => buscarJogador(partida, id)!)
-    .filter((j) => vagas(j) > 0);
+  const correndo = fimEm !== null;
+  const restanteMs = correndo ? Math.max(0, fimEm - agora) : TEMPO_REPESCAGEM_MS;
+  const segundos = Math.ceil(restanteMs / 1000);
+  const quem = buscarJogador(partida, comprador);
+  const vendaValida = !!quem && podeComprar(quem, valor);
+  const restantes = partida.repescagem.length;
+  const naRoleta = roleta ? partida.jogadores.filter((j) => roleta.includes(j.id)) : [];
+  const donoSobra = sobra ? buscarJogador(partida, sobra.jogadorId) : undefined;
 
-  function escolher() {
-    if (!partida || !selecionado) return;
-    salvarPartida(escolherPersonagem(partida, selecionado));
-    setSelecionado(null);
-    router.push('/partida/registrar');
+  function iniciar() {
+    setAviso(null);
+    setAgora(Date.now());
+    setFimEm(Date.now() + TEMPO_REPESCAGEM_MS);
   }
 
-  function passar() {
+  function encerrar() {
+    setFimEm(null);
+    setFase('registro');
+  }
+
+  function escolherComprador(j: Jogador) {
+    setComprador(j.id);
+    setValor((v) => Math.min(v, j.saldo));
+  }
+
+  function registrar(venda: Venda) {
     if (!partida) return;
-    const nova = passarVez(partida);
-    setSelecionado(null);
+    const nova = aplicarVenda(partida, venda);
     salvarPartida(nova);
-    // Todos passaram: o personagem já tem dono e vai para o registro.
-    if (nova.pendente) router.push('/partida/registrar');
+    setFase('relogio');
+    setComprador(null);
+    setValor(0);
+    setSobra(null);
+    setRoleta(null);
+    setAviso(
+      `${buscarPersonagem(venda.codigo)?.nome} foi para ${buscarJogador(nova, venda.jogadorId)?.nome} por ${formatarReais(venda.valor)}.`,
+    );
   }
 
-  const desempate = dados
-    ? Object.entries(dados)
-        .map(([id, valores]) => `${buscarJogador(partida, Number(id))?.nome} ${valores.join('→')}`)
-        .join(' · ')
-    : null;
+  function semLance() {
+    if (!partida || !codigo) return;
+    const resultado = semLanceNaRepescagem(partida, codigo);
+    if (resultado.tipo === 'roleta') setRoleta(resultado.candidatos);
+    else setSobra(resultado.venda);
+  }
 
   return (
     <View style={styles.tela}>
-      <Cabecalho titulo="Repescagem" subtitulo={`Vez de ${vez.nome}`} />
+      <Cabecalho
+        titulo="Repescagem"
+        subtitulo={restantes === 1 ? 'Último personagem' : `Faltam ${restantes} personagens`}
+      />
 
       <ScrollView contentContainerStyle={styles.conteudo}>
-        <View style={styles.vez}>
-          <Avatar jogadorId={vez.id} texto={vez.nome.charAt(0).toUpperCase()} />
-          <View style={styles.flex}>
-            <Text style={styles.vezNome} numberOfLines={1}>
-              {vez.nome} escolhe
-            </Text>
-            <Text style={styles.vezDetalhe}>
-              Saldo {formatarReais(vez.saldo)} · {custo > 0 ? `custa ${formatarReais(custo)}` : 'grátis com saldo zero'}
-            </Text>
+        {aviso && fase === 'relogio' ? (
+          <View style={styles.aviso}>
+            <Text style={styles.avisoTexto}>{aviso}</Text>
           </View>
-        </View>
+        ) : null}
 
-        <Rotulo>Personagens sem dono</Rotulo>
-        {partida.repescagem.map((codigo) => {
-          const p = buscarPersonagem(codigo)!;
-          const ativo = codigo === selecionado;
-          return (
-            <View key={codigo} style={[styles.carta, ativo && styles.cartaAtiva]}>
+        <View style={styles.carta}>
+          <View style={styles.cartaTopo}>
+            <ImagemPersonagem codigo={p.codigo} style={styles.imagem} />
+            <View style={styles.flex}>
+              <Text style={styles.nome} numberOfLines={2}>
+                {p.nome}
+              </Text>
+              <Text style={styles.codigo}>{p.codigo}</Text>
+              <View style={styles.habitats}>
+                {p.habitats.map((h) => (
+                  <HabitatTag key={h} habitat={h} tamanho={24} />
+                ))}
+              </View>
               <Pressable
-                onPress={() => setSelecionado(codigo)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: ativo }}
-                style={styles.cartaEscolha}
-              >
-                <View style={styles.cartaTopo}>
-                  <ImagemPersonagem codigo={codigo} style={styles.imagem} />
-                  <View style={styles.flex}>
-                    <Text style={styles.nome} numberOfLines={2}>
-                      {p.nome}
-                    </Text>
-                    <Text style={styles.codigo}>{p.codigo}</Text>
-                    <View style={styles.habitats}>
-                      {p.habitats.map((h) => (
-                        <HabitatTag key={h} habitat={h} />
-                      ))}
-                    </View>
-                  </View>
-                </View>
-                <Text style={styles.descricao}>“{p.descricao}”</Text>
-              </Pressable>
-              <Pressable
-                onPress={() => router.push({ pathname: '/personagens/[codigo]', params: { codigo } })}
+                onPress={() => router.push({ pathname: '/personagens/[codigo]', params: { codigo: p.codigo } })}
                 accessibilityRole="button"
                 style={({ pressed }) => [styles.atributos, pressed && styles.atributosPressionado]}
               >
                 <Text style={styles.atributosTexto}>Ver atributos</Text>
               </Pressable>
             </View>
-          );
-        })}
-
-        <Rotulo>Ordem de escolha</Rotulo>
-        <View style={styles.fila}>
-          {naFila.map((j) => (
-            <View key={j.id} style={[styles.jogador, j.id === vez.id && styles.jogadorVez]}>
-              <Avatar jogadorId={j.id} texto={j.nome.charAt(0).toUpperCase()} tamanho={26} />
-              <View style={styles.flex}>
-                <Text style={styles.jogadorNome} numberOfLines={1}>
-                  {j.nome}
-                </Text>
-                <Text style={styles.jogadorSaldo}>
-                  {formatarReais(j.saldo)} · {vagas(j)} {vagas(j) === 1 ? 'vaga' : 'vagas'}
-                </Text>
-              </View>
-            </View>
-          ))}
+          </View>
+          <Text style={styles.descricao}>“{p.descricao}”</Text>
         </View>
 
-        {desempate ? <Text style={styles.legenda}>Desempate no dado, o maior vem primeiro: {desempate}</Text> : null}
-        <Text style={styles.legenda}>Se todos passarem, o personagem fica com quem tem menos dinheiro.</Text>
+        {fase === 'relogio' ? (
+          <>
+            <View style={styles.relogio}>
+              <Cronometro
+                segundos={segundos}
+                fracao={restanteMs / TEMPO_REPESCAGEM_MS}
+                urgente={correndo && segundos <= 3}
+                tamanho={150}
+              />
+              <Text style={styles.legenda}>
+                {correndo
+                  ? 'Lances na mesa! Só quem ainda tem vaga pode levar.'
+                  : 'Quando o tempo acabar, registre quem levou e por quanto.'}
+              </Text>
+            </View>
+            <Rotulo>Jogadores</Rotulo>
+            <GradeJogadores jogadores={partida.jogadores} />
+          </>
+        ) : sobra && donoSobra ? (
+          <View style={styles.aviso}>
+            <Text style={styles.avisoTexto}>
+              Ninguém deu lance: {p.nome} fica com {donoSobra.nome}, que tem menos dinheiro, por{' '}
+              {formatarReais(sobra.valor)}.
+            </Text>
+          </View>
+        ) : (
+          <>
+            <Text style={styles.esgotado}>Tempo esgotado!</Text>
+            <Rotulo>Quem levou?</Rotulo>
+            <GradeJogadores jogadores={partida.jogadores} selecionado={comprador} onSelecionar={escolherComprador} />
+            <Rotulo>Por quanto?</Rotulo>
+            <SeletorValor valor={valor} maximo={quem?.saldo} onMudar={setValor} />
+            {quem ? (
+              <Text style={styles.legenda}>
+                Saldo de {quem.nome}: {formatarReais(quem.saldo)} → {formatarReais(quem.saldo - valor)}
+              </Text>
+            ) : null}
+          </>
+        )}
       </ScrollView>
 
+      <Roleta
+        visivel={!!roleta}
+        carta={p.nome}
+        motivo="Ninguém deu lance e há empate em quem tem menos dinheiro"
+        jogadores={naRoleta}
+        valor={(j) => vendaSobra(partida, p.codigo, j.id).valor}
+        onConfirmar={(id) => registrar(vendaSobra(partida, p.codigo, id))}
+        onCancelar={() => setRoleta(null)}
+      />
+
       <View style={[styles.rodape, { paddingBottom: bottom + 16 }]}>
-        <Botao
-          titulo={selecionado ? `${vez.nome} escolhe` : 'Toque em um personagem'}
-          onPress={escolher}
-          desativado={!selecionado}
-          style={styles.flex}
-        />
-        <Botao titulo="Não quero" variante="secundario" onPress={passar} style={styles.secundario} />
+        {fase === 'relogio' ? (
+          correndo ? (
+            <Botao titulo="Encerrar agora" variante="secundario" onPress={encerrar} style={styles.flex} />
+          ) : (
+            <Botao titulo="Começar 10 s" onPress={iniciar} style={styles.flex} />
+          )
+        ) : sobra ? (
+          <>
+            <Botao titulo="Confirmar" onPress={() => registrar(sobra)} style={styles.flex} />
+            <Botao titulo="Cancelar" variante="secundario" onPress={() => setSobra(null)} style={styles.secundario} />
+          </>
+        ) : (
+          <>
+            <Botao
+              titulo="Confirmar venda"
+              onPress={() => quem && registrar(venderNaRepescagem(p.codigo, quem.id, valor))}
+              desativado={!vendaValida}
+              style={styles.flex}
+            />
+            <Botao titulo="Sem lance" variante="secundario" onPress={semLance} style={styles.secundario} />
+          </>
+        )}
       </View>
     </View>
   );
@@ -180,58 +252,42 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 16,
     paddingBottom: 12,
-    gap: 12,
+    gap: 14,
   },
-  vez: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 60,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 12,
+  aviso: {
+    backgroundColor: cores.painelClaro,
+    borderColor: cores.habitat.ar,
     borderWidth: 1,
-    borderColor: cores.dourado,
-    backgroundColor: 'rgba(140,107,31,0.35)',
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
   },
-  vezNome: {
-    fontFamily: fontes.textoForte,
-    fontSize: 16,
-    color: cores.texto,
-  },
-  vezDetalhe: {
-    fontFamily: fontes.texto,
+  avisoTexto: {
+    fontFamily: fontes.textoMedio,
     fontSize: 13,
-    color: cores.douradoClaro,
+    color: cores.texto,
+    textAlign: 'center',
   },
   carta: {
     gap: 10,
     padding: 10,
     borderRadius: 14,
-    borderWidth: 1,
-    borderColor: cores.douradoEscuro,
-    backgroundColor: cores.painel,
-  },
-  cartaAtiva: {
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: cores.dourado,
-    backgroundColor: cores.painelClaro,
-  },
-  cartaEscolha: {
-    gap: 10,
+    backgroundColor: cores.painel,
   },
   cartaTopo: {
     flexDirection: 'row',
-    gap: 12,
+    gap: 14,
   },
   imagem: {
-    width: 84,
-    height: 84,
+    width: 120,
+    height: 120,
     borderRadius: 10,
   },
   nome: {
     fontFamily: fontes.titulo,
-    fontSize: 16,
+    fontSize: 18,
     color: cores.douradoClaro,
   },
   codigo: {
@@ -239,25 +295,20 @@ const styles = StyleSheet.create({
     fontSize: 13,
     letterSpacing: 0.78,
     color: cores.textoSuave,
-    marginTop: 2,
+    marginTop: 4,
   },
   habitats: {
     flexDirection: 'row',
     gap: 6,
     marginTop: 6,
   },
-  descricao: {
-    fontFamily: fontes.textoItalico,
-    fontSize: 13,
-    lineHeight: 19,
-    color: cores.textoSuave,
-  },
   atributos: {
-    height: 32,
+    height: 30,
     borderRadius: 8,
     backgroundColor: cores.painelClaro,
     alignItems: 'center',
     justifyContent: 'center',
+    marginTop: 'auto',
   },
   atributosPressionado: {
     backgroundColor: cores.douradoEscuro,
@@ -267,44 +318,26 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: cores.douradoClaro,
   },
-  fila: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  jogador: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    width: '48.8%',
-    flexGrow: 1,
-    minHeight: 50,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: cores.douradoEscuro,
-    backgroundColor: cores.painel,
-  },
-  jogadorVez: {
-    borderWidth: 2,
-    borderColor: cores.dourado,
-    backgroundColor: cores.painelClaro,
-  },
-  jogadorNome: {
-    fontFamily: fontes.textoMedio,
-    fontSize: 14,
-    color: cores.texto,
-  },
-  jogadorSaldo: {
-    fontFamily: fontes.texto,
-    fontSize: 12,
+  descricao: {
+    fontFamily: fontes.textoItalico,
+    fontSize: 13,
+    lineHeight: 19,
     color: cores.textoSuave,
+  },
+  relogio: {
+    alignItems: 'center',
+    gap: 10,
   },
   legenda: {
     fontFamily: fontes.texto,
     fontSize: 12,
     color: cores.textoSuave,
+    textAlign: 'center',
+  },
+  esgotado: {
+    fontFamily: fontes.titulo,
+    fontSize: 20,
+    color: cores.douradoClaro,
     textAlign: 'center',
   },
   rodape: {

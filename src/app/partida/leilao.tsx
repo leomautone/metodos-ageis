@@ -3,14 +3,15 @@ import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Avatar } from '@/components/Avatar';
 import { Botao } from '@/components/Botao';
 import { Cabecalho } from '@/components/Cabecalho';
 import { Cronometro } from '@/components/Cronometro';
+import { GradeJogadores } from '@/components/GradeJogadores';
 import { ImagemPersonagem } from '@/components/ImagemPersonagem';
 import { LeitorQR } from '@/components/LeitorQR';
 import { Roleta } from '@/components/Roleta';
 import { Rotulo } from '@/components/Rotulo';
+import { SeletorValor } from '@/components/SeletorValor';
 import { normalizarCodigo } from '@/data/formatar';
 import { buscarPersonagem } from '@/data/personagens';
 import {
@@ -22,7 +23,6 @@ import {
   podeComprar,
   TEMPO_LEILAO_MS,
   totalLeiloes,
-  vagas,
   vendaObrigatoria,
   venderCarta,
 } from '@/partida/leilao';
@@ -30,7 +30,6 @@ import {
   buscarJogador,
   formatarReais,
   salvarPartida,
-  TAMANHO_TIME,
   usePartida,
   type Jogador,
   type Venda,
@@ -70,7 +69,7 @@ export default function Leilao() {
     if (fimEm !== null && agora >= fimEm) encerrar();
   });
 
-  const concluido = partida !== null && leilaoConcluido(partida) && !partida.pendente;
+  const concluido = partida !== null && leilaoConcluido(partida);
   const sobrouRepescagem = (partida?.repescagem.length ?? 0) > 0;
   useEffect(() => {
     if (concluido) router.replace(sobrouRepescagem ? '/partida/repescagem' : '/partida/times');
@@ -268,29 +267,7 @@ export default function Leilao() {
                 />
 
                 <Rotulo>3. Por quanto?</Rotulo>
-                <View style={styles.valorLinha}>
-                  <Pressable
-                    onPress={() => setValor(Math.max(0, valor - 1))}
-                    disabled={valor <= 0}
-                    accessibilityRole="button"
-                    accessibilityLabel="Diminuir valor"
-                    style={[styles.passo, valor <= 0 && styles.inativo]}
-                  >
-                    <Text style={styles.passoTexto}>−</Text>
-                  </Pressable>
-                  <View style={styles.valor}>
-                    <Text style={styles.valorTexto}>{formatarReais(valor)}</Text>
-                  </View>
-                  <Pressable
-                    onPress={() => setValor(valor + 1)}
-                    disabled={!!quem && valor >= quem.saldo}
-                    accessibilityRole="button"
-                    accessibilityLabel="Aumentar valor"
-                    style={[styles.passo, !!quem && valor >= quem.saldo && styles.inativo]}
-                  >
-                    <Text style={styles.passoTexto}>+</Text>
-                  </Pressable>
-                </View>
+                <SeletorValor valor={valor} maximo={quem?.saldo} onMudar={setValor} />
                 {quem ? (
                   <Text style={styles.legenda}>
                     Saldo de {quem.nome}: {formatarReais(quem.saldo)} → {formatarReais(quem.saldo - valor)}
@@ -305,6 +282,7 @@ export default function Leilao() {
       <Roleta
         visivel={!!roleta && !!codigo}
         carta={carta?.nome ?? ''}
+        motivo="Repescagem cheia e empate em vagas"
         jogadores={naRoleta}
         valor={(j) => (codigo ? vendaObrigatoria(partida, codigo, j.id).valor : 0)}
         onConfirmar={(id) => codigo && registrar(vendaObrigatoria(partida, codigo, id))}
@@ -341,51 +319,6 @@ export default function Leilao() {
           </>
         )}
       </View>
-    </View>
-  );
-}
-
-type GradeProps = {
-  jogadores: Jogador[];
-  selecionado?: number | null;
-  // Sem onSelecionar, a grade só mostra saldo e vagas.
-  onSelecionar?: (j: Jogador) => void;
-};
-
-// Jogadores com saldo e vagas (pontos cheios = vagas livres no time).
-function GradeJogadores({ jogadores, selecionado, onSelecionar }: GradeProps) {
-  return (
-    <View style={styles.grade}>
-      {jogadores.map((j) => {
-        const livres = vagas(j);
-        const ativo = j.id === selecionado;
-        const bloqueado = !!onSelecionar && livres === 0;
-        return (
-          <Pressable
-            key={j.id}
-            disabled={!onSelecionar || bloqueado}
-            onPress={() => onSelecionar?.(j)}
-            accessibilityRole={onSelecionar ? 'button' : undefined}
-            accessibilityState={{ selected: ativo, disabled: bloqueado }}
-            style={[styles.jogador, ativo && styles.jogadorAtivo, bloqueado && styles.jogadorInativo]}
-          >
-            <Avatar jogadorId={j.id} texto={j.nome.charAt(0).toUpperCase()} tamanho={34} />
-            <View style={styles.flex}>
-              <Text style={styles.jogadorNome} numberOfLines={1}>
-                {j.nome}
-              </Text>
-              <View style={styles.saldoLinha}>
-                <Text style={styles.saldo}>{formatarReais(j.saldo)}</Text>
-                <View style={styles.pontos} accessibilityLabel={`${livres} vagas`}>
-                  {Array.from({ length: TAMANHO_TIME }, (_, i) => (
-                    <View key={i} style={[styles.ponto, i < livres && styles.pontoCheio]} />
-                  ))}
-                </View>
-              </View>
-            </View>
-          </Pressable>
-        );
-      })}
     </View>
   );
 }
@@ -503,95 +436,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.78,
     color: cores.textoSuave,
     marginTop: 2,
-  },
-  grade: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  jogador: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    width: '48.8%',
-    flexGrow: 1,
-    height: 62,
-    paddingHorizontal: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: cores.douradoEscuro,
-    backgroundColor: cores.painel,
-  },
-  jogadorAtivo: {
-    borderWidth: 2,
-    borderColor: cores.dourado,
-    backgroundColor: cores.painelClaro,
-  },
-  jogadorInativo: {
-    opacity: 0.45,
-  },
-  jogadorNome: {
-    fontFamily: fontes.textoMedio,
-    fontSize: 15,
-    color: cores.texto,
-  },
-  saldoLinha: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  saldo: {
-    fontFamily: fontes.numeroForte,
-    fontSize: 15,
-    color: cores.dourado,
-  },
-  pontos: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  ponto: {
-    width: 9,
-    height: 9,
-    borderRadius: 4.5,
-    backgroundColor: cores.painelClaro,
-  },
-  pontoCheio: {
-    backgroundColor: cores.douradoClaro,
-  },
-  valorLinha: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  passo: {
-    width: 64,
-    height: 52,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: cores.dourado,
-    backgroundColor: cores.painel,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  inativo: {
-    opacity: 0.4,
-  },
-  passoTexto: {
-    fontFamily: fontes.numeroForte,
-    fontSize: 26,
-    color: cores.douradoClaro,
-  },
-  valor: {
-    flex: 1,
-    height: 52,
-    borderRadius: 12,
-    backgroundColor: cores.painelClaro,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  valorTexto: {
-    fontFamily: fontes.numeroForte,
-    fontSize: 26,
-    color: cores.douradoClaro,
   },
   rodape: {
     flexDirection: 'row',

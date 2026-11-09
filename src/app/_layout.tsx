@@ -39,10 +39,7 @@ export default function RootLayout() {
           headerShown: false,
           contentStyle: { backgroundColor: cores.fundo },
         }}
-      >
-        {/* Sem gesto de arrastar: sair do registro passa sempre pela confirmação. */}
-        <Stack.Screen name="partida/registrar" options={{ gestureEnabled: false }} />
-      </Stack>
+      />
     </>
   );
 }
