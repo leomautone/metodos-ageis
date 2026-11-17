@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react';
 
 import type { ResultadoBatalha } from '@/batalha/motor';
+import type { NarracaoIA } from '@/batalha/narracaoIA';
+import type { GiroSorte } from '@/partida/sorte';
 
 // Estado da partida em andamento, compartilhado entre as telas.
 // Por enquanto fica só na memória: fechar o app perde a partida.
@@ -37,10 +39,14 @@ export type Partida = {
   vendas: Venda[];
   // A ordem da repescagem já foi sorteada (o primeiro da lista é o da vez).
   repescagemSorteada: boolean;
+  // Giros da roleta de bênçãos e maldições de cada jogador, depois do draft.
+  sorte: Record<number, GiroSorte[]>;
   // Chances antes da luta e a batalha sorteada, depois do leilão.
   batalha: {
     chances: Record<number, number>;
     resultado: ResultadoBatalha;
+    // Narração escrita pela IA; sem ela, a batalha usa as frases prontas.
+    narracao: NarracaoIA | null;
   } | null;
 };
 
@@ -79,7 +85,7 @@ export function criarPartida(nomes: string[]): Partida {
     saldo: SALDO_INICIAL,
     time: [],
   }));
-  return { jogadores, indiceAtual: 0, repescagem: [], vendas: [], repescagemSorteada: false, batalha: null };
+  return { jogadores, indiceAtual: 0, repescagem: [], vendas: [], repescagemSorteada: false, sorte: {}, batalha: null };
 }
 
 // Os lances andam de R$ 1 em R$ 1, então o valor é sempre inteiro.

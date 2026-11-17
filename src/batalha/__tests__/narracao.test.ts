@@ -72,7 +72,7 @@ describe('narração épica', () => {
   });
 
   it('avisa quando ninguém ataca', () => {
-    expect(narrarRound([], 2, jogador)[1].texto).toContain('Ninguém ataca');
+    expect(narrarRound([], 2, jogador)[1].texto).toMatch(/^Ninguém/);
   });
 
   it('a mesma batalha sempre gera o mesmo texto, e uma batalha real tem um FORA! por eliminação', () => {
@@ -87,6 +87,7 @@ describe('narração épica', () => {
     expect(narrar()).toEqual(narrar());
     const foras = narrar().filter((b) => b.fora).length;
     expect(foras).toBe(eventos.filter((e) => e.tipo === 'duelo').length);
-    expect(narrar().at(-1)?.texto).toContain('continua de pé');
+    const { vencedor } = simularBatalha(times, criarAleatorio(11));
+    expect(narrar().at(-1)?.texto).toContain(`time de J${vencedor}`);
   });
 });

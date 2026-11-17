@@ -5,6 +5,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { MAX_ROUNDS, type Round } from '@/batalha/motor';
 import { narrarRound } from '@/batalha/narracao';
+import { blocosDoRound } from '@/batalha/narracaoIA';
 import { Botao } from '@/components/Botao';
 import { Cabecalho } from '@/components/Cabecalho';
 import { buscarJogador, usePartida } from '@/partida/partida';
@@ -39,7 +40,9 @@ export default function Batalha() {
   const ultimo = pagina === rounds.length - 1;
   const proximo = rounds[pagina + 1];
   const jogador = (id: number) => buscarJogador(partida, id)?.nome ?? '?';
-  const blocos = narrarRound(eventos, round, jogador);
+  // Texto da IA quando ele passou na conferência; senão, as frases prontas.
+  const daIA = blocosDoRound(batalha.narracao, round);
+  const blocos = daIA ?? narrarRound(eventos, round, jogador);
 
   function avancar() {
     if (ultimo) router.push('/partida/resultado');
@@ -56,6 +59,9 @@ export default function Batalha() {
             {round === 'final' ? 'Clareira no centro da savana' : 'Savana com lago e penhasco'}
           </Text>
         </View>
+        <Text style={[styles.narrador, daIA && styles.narradorIA]}>
+          {daIA ? '✦ Narrado pela IA' : 'Narração padrão (a IA não respondeu)'}
+        </Text>
 
         {blocos.map((b, i) =>
           b.fora ? (
@@ -112,6 +118,17 @@ const styles = StyleSheet.create({
     fontFamily: fontes.textoMedio,
     fontSize: 13,
     color: cores.douradoClaro,
+  },
+  narrador: {
+    fontFamily: fontes.numero,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    color: cores.textoApagado,
+    textAlign: 'center',
+    textTransform: 'uppercase',
+  },
+  narradorIA: {
+    color: cores.dourado,
   },
   combate: {
     borderRadius: 12,

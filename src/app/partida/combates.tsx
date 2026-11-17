@@ -1,26 +1,26 @@
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { ScrollView, StyleSheet, Text, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import type { Evento, Round, Zona } from '@/batalha/motor';
-import { nome, nomeHabilidade } from '@/batalha/narracao';
-import { Cabecalho } from '@/components/Cabecalho';
-import { ImagemPersonagem } from '@/components/ImagemPersonagem';
-import { Rotulo } from '@/components/Rotulo';
-import { buscarJogador, usePartida } from '@/partida/partida';
-import { cores, fontes } from '@/theme';
+import type { Evento, Round, Zona } from "@/batalha/motor";
+import { nome, nomeHabilidade, saiDaBatalha } from "@/batalha/narracao";
+import { Cabecalho } from "@/components/Cabecalho";
+import { ImagemPersonagem } from "@/components/ImagemPersonagem";
+import { Rotulo } from "@/components/Rotulo";
+import { buscarJogador, usePartida } from "@/partida/partida";
+import { cores, fontes } from "@/theme";
 
 const ZONA: Record<Zona, { rotulo: string; cor: string }> = {
-  terra: { rotulo: 'TERRA', cor: cores.habitat.terra },
-  agua: { rotulo: 'ÁGUA', cor: cores.habitat.agua },
-  ar: { rotulo: 'AR', cor: cores.habitat.ar },
-  neutra: { rotulo: 'CLAREIRA', cor: cores.dourado },
+  terra: { rotulo: "TERRA", cor: cores.habitat.terra },
+  agua: { rotulo: "ÁGUA", cor: cores.habitat.agua },
+  ar: { rotulo: "AR", cor: cores.habitat.ar },
+  neutra: { rotulo: "CLAREIRA", cor: cores.dourado },
 };
 
 const CONDICAO: Record<Zona, string> = {
-  terra: 'Terremoto: quem é da terra ganha +2',
-  agua: 'Enchente: quem é da água ganha +2',
-  ar: 'Vendaval: quem voa ganha +1,5',
-  neutra: '',
+  terra: "Terremoto: quem é da terra ganha +2",
+  agua: "Enchente: quem é da água ganha +2",
+  ar: "Vendaval: quem voa ganha +1,5",
+  neutra: "",
 };
 
 // Combates: cada duelo com as imagens, separados por round, e quem saiu em cada um.
@@ -28,30 +28,52 @@ export default function Combates() {
   const partida = usePartida();
   const { bottom } = useSafeAreaInsets();
   const eventos = partida?.batalha?.resultado.eventos ?? [];
-  const rounds = [...new Set(eventos.filter((e) => e.tipo !== 'vencedor').map((e) => e.round))];
-  const jogador = (id: number) => (partida ? buscarJogador(partida, id)?.nome : undefined) ?? '?';
+  const rounds = [
+    ...new Set(
+      eventos.filter((e) => e.tipo !== "vencedor").map((e) => e.round),
+    ),
+  ];
+  const jogador = (id: number) =>
+    (partida ? buscarJogador(partida, id)?.nome : undefined) ?? "?";
 
   return (
     <View style={styles.tela}>
       <Cabecalho titulo="Combates" subtitulo="Eliminados em cada round" />
 
-      <ScrollView contentContainerStyle={[styles.conteudo, { paddingBottom: bottom + 24 }]}>
-        {rounds.length === 0 ? <Text style={styles.calmo}>Não houve combates nesta batalha.</Text> : null}
+      <ScrollView
+        contentContainerStyle={[
+          styles.conteudo,
+          { paddingBottom: bottom + 24 },
+        ]}
+      >
+        {rounds.length === 0 ? (
+          <Text style={styles.calmo}>Não houve combates nesta batalha.</Text>
+        ) : null}
 
         {rounds.map((round) => {
-          const doRound = eventos.filter((e) => e.round === round && e.tipo !== 'vencedor');
-          const eliminados = doRound.filter((e) => e.tipo === 'duelo').map((e) => nome(e.eliminado));
+          const doRound = eventos.filter(
+            (e) => e.round === round && e.tipo !== "vencedor",
+          );
+          const eliminados = doRound
+            .filter(saiDaBatalha)
+            .map((e) => nome(e.eliminado));
           return (
             <View key={String(round)} style={styles.round}>
               <Rotulo style={styles.rotulo}>{tituloDoRound(round)}</Rotulo>
               <View style={styles.eliminados}>
                 <Text style={styles.eliminadosRotulo}>FORA</Text>
                 <Text style={styles.eliminadosTexto}>
-                  {eliminados.length > 0 ? eliminados.join(', ') : 'Ninguém caiu neste round'}
+                  {eliminados.length > 0
+                    ? eliminados.join(", ")
+                    : "Ninguém caiu neste round"}
                 </Text>
               </View>
               {doRound.map((e, i) =>
-                e.tipo === 'duelo' ? <CartaoDuelo key={i} evento={e} /> : <Aviso key={i} evento={e} jogador={jogador} />,
+                e.tipo === "duelo" ? (
+                  <CartaoDuelo key={i} evento={e} />
+                ) : (
+                  <Aviso key={i} evento={e} jogador={jogador} />
+                ),
               )}
             </View>
           );
@@ -62,60 +84,94 @@ export default function Combates() {
 }
 
 function tituloDoRound(round: Round) {
-  return round === 'final' ? 'Duelo final' : `Round ${round}`;
+  return round === "final" ? "Duelo final" : `Round ${round}`;
 }
 
 function CartaoDuelo({ evento }: { evento: Evento }) {
   const { atacante, alvo, eliminado } = evento;
-  const zona = ZONA[evento.zona ?? 'neutra'];
-  const habilidades = evento.habilidades_usadas.map(nomeHabilidade).join(', ');
+  const zona = ZONA[evento.zona ?? "neutra"];
+  const habilidades = evento.habilidades_usadas.map(nomeHabilidade).join(", ");
   return (
     <View style={styles.duelo}>
       <View style={styles.dueloLinha}>
-        <ImagemPersonagem codigo={atacante!} style={styles.rosto} apagada={eliminado === atacante} />
+        <ImagemPersonagem
+          codigo={atacante!}
+          style={styles.rosto}
+          apagada={eliminado === atacante}
+        />
         <View style={styles.dueloCentro}>
           <Text style={styles.vs}>VS</Text>
           <View style={[styles.zona, { backgroundColor: zona.cor }]}>
             <Text style={styles.zonaTexto}>{zona.rotulo}</Text>
           </View>
         </View>
-        <ImagemPersonagem codigo={alvo!} style={styles.rosto} apagada={eliminado === alvo} />
+        <ImagemPersonagem
+          codigo={alvo!}
+          style={styles.rosto}
+          apagada={eliminado === alvo}
+        />
       </View>
       <View style={styles.nomes}>
-        <Text style={[styles.dueloNome, eliminado !== atacante && styles.vencedor]} numberOfLines={1}>
+        <Text
+          style={[styles.dueloNome, eliminado !== atacante && styles.vencedor]}
+          numberOfLines={1}
+        >
           {nome(atacante)}
         </Text>
-        <Text style={[styles.dueloNome, styles.direita, eliminado !== alvo && styles.vencedor]} numberOfLines={1}>
+        <Text
+          style={[
+            styles.dueloNome,
+            styles.direita,
+            eliminado !== alvo && styles.vencedor,
+          ]}
+          numberOfLines={1}
+        >
           {nome(alvo)}
         </Text>
       </View>
       <Text style={styles.dueloResumo}>
         {evento.zebra ? <Text style={styles.zebra}>ZEBRA · </Text> : null}
-        {nome(eliminado)} FORA!{habilidades ? ` · ${habilidades}` : ''}
+        {nome(eliminado)} FORA!{habilidades ? ` · ${habilidades}` : ""}
       </Text>
     </View>
   );
 }
 
-function Aviso({ evento, jogador }: { evento: Evento; jogador: (id: number) => string }) {
-  let texto = '';
+function Aviso({
+  evento,
+  jogador,
+}: {
+  evento: Evento;
+  jogador: (id: number) => string;
+}) {
+  let texto = "";
   switch (evento.tipo) {
-    case 'esquiva':
-      texto = `${nome(evento.alvo)} esquivou de ${nome(evento.atacante)} com ${nomeHabilidade(evento.habilidades_usadas[0] ?? '')}`;
+    case "esquiva":
+      texto = `${nome(evento.alvo)} esquivou de ${nome(evento.atacante)} com ${nomeHabilidade(evento.habilidades_usadas[0] ?? "")}`;
       break;
-    case 'ultima_resistencia':
+    case "ultima_resistencia":
       texto = `Última resistência: ${nome(evento.atacante)} luta sozinho por ${jogador(evento.time ?? 0)}`;
       break;
-    case 'arena_fecha':
-      texto = 'A arena se fecha na clareira: agora todos se alcançam';
+    case "baixa":
+      texto = `Maldição: ${nome(evento.eliminado)} caiu antes da luta (${jogador(evento.time ?? 0)})`;
       break;
-    case 'condicao_final':
-      texto = CONDICAO[evento.zona ?? 'neutra'];
+    case "vida_extra":
+      texto = `Vida extra: ${nome(evento.salvo)} perdeu para ${nome(evento.salvo === evento.alvo ? evento.atacante : evento.alvo)}, mas continua de pé`;
+      break;
+    case "arena_fecha":
+      texto = "A arena se fecha na clareira: agora todos se alcançam";
+      break;
+    case "condicao_final":
+      texto =
+        CONDICAO[evento.zona ?? "neutra"] +
+        (evento.time ? ` (escolha de ${jogador(evento.time)})` : "");
       break;
   }
   if (!texto) return null;
   return (
-    <View style={[styles.aviso, evento.tipo !== 'esquiva' && styles.avisoDourado]}>
+    <View
+      style={[styles.aviso, evento.tipo !== "esquiva" && styles.avisoDourado]}
+    >
       <Text style={styles.avisoTexto}>{texto}</Text>
     </View>
   );
@@ -135,7 +191,7 @@ const styles = StyleSheet.create({
     fontFamily: fontes.texto,
     fontSize: 13,
     color: cores.textoSuave,
-    textAlign: 'center',
+    textAlign: "center",
   },
   round: {
     gap: 10,
@@ -145,8 +201,8 @@ const styles = StyleSheet.create({
     color: cores.douradoClaro,
   },
   eliminados: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    flexDirection: "row",
+    alignItems: "center",
     gap: 10,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -175,9 +231,9 @@ const styles = StyleSheet.create({
     paddingBottom: 8,
   },
   dueloLinha: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   rosto: {
     width: 56,
@@ -185,7 +241,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
   },
   dueloCentro: {
-    alignItems: 'center',
+    alignItems: "center",
     gap: 4,
   },
   vs: {
@@ -198,8 +254,8 @@ const styles = StyleSheet.create({
     height: 20,
     paddingHorizontal: 8,
     borderRadius: 10,
-    alignItems: 'center',
-    justifyContent: 'center',
+    alignItems: "center",
+    justifyContent: "center",
   },
   zonaTexto: {
     fontFamily: fontes.numero,
@@ -208,8 +264,8 @@ const styles = StyleSheet.create({
     color: cores.fundo,
   },
   nomes: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexDirection: "row",
+    justifyContent: "space-between",
     marginTop: 6,
     gap: 8,
   },
@@ -220,7 +276,7 @@ const styles = StyleSheet.create({
     color: cores.textoSuave,
   },
   direita: {
-    textAlign: 'right',
+    textAlign: "right",
   },
   vencedor: {
     color: cores.douradoClaro,
@@ -229,7 +285,7 @@ const styles = StyleSheet.create({
     fontFamily: fontes.texto,
     fontSize: 12,
     color: cores.texto,
-    textAlign: 'center',
+    textAlign: "center",
     marginTop: 4,
   },
   zebra: {
@@ -244,7 +300,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: cores.habitat.ar,
     backgroundColor: cores.painelClaro,
-    justifyContent: 'center',
+    justifyContent: "center",
   },
   avisoDourado: {
     borderColor: cores.dourado,
@@ -253,6 +309,6 @@ const styles = StyleSheet.create({
     fontFamily: fontes.textoMedio,
     fontSize: 13,
     color: cores.texto,
-    textAlign: 'center',
+    textAlign: "center",
   },
 });

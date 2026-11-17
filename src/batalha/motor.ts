@@ -1,17 +1,25 @@
-import { buscarPersonagem, type Habitat, type Personagem } from '@/data/personagens';
+import {
+  buscarPersonagem,
+  type Habitat,
+  type Personagem,
+} from "@/data/personagens";
 
 // Motor de batalha (Modelo de Batalha v7), sem dependência de tela.
 // Recebe os times e um gerador aleatório; devolve a lista de eventos.
 
-export type Zona = Habitat | 'neutra';
-export type Round = number | 'final';
+export type Zona = Habitat | "neutra";
+export type Round = number | "final";
 export type TipoEvento =
-  | 'duelo'
-  | 'esquiva'
-  | 'ultima_resistencia'
-  | 'arena_fecha'
-  | 'condicao_final'
-  | 'vencedor';
+  | "duelo"
+  // Venceu o duelo, mas o último animal do outro time gastou a vida extra.
+  | "vida_extra"
+  // Maldição da roleta: um animal cai antes da primeira luta.
+  | "baixa"
+  | "esquiva"
+  | "ultima_resistencia"
+  | "arena_fecha"
+  | "condicao_final"
+  | "vencedor";
 
 export type Evento = {
   round: Round;
@@ -24,13 +32,27 @@ export type Evento = {
   eliminado: string | null;
   habilidades_usadas: string[];
   zebra: boolean;
-  // Só no evento "vencedor" e na "ultima_resistencia": o jogador dono do time.
+  // Jogador dono do time em "vencedor", "ultima_resistencia", "baixa" e
+  // "vida_extra"; em "condicao_final", quem escolheu o terreno na roleta.
   time?: number | null;
+  // Em "vida_extra": o animal que perdeu o duelo e continua vivo.
+  salvo?: string | null;
 };
 
 export type TimeBatalha = {
   jogadorId: number;
   codigos: string[];
+  // Bênçãos e maldições da roleta (src/partida/sorte.ts):
+  // soma ao Poder de todos os animais do time;
+  bonus?: number;
+  // soma ao Poder de um animal só (código → valor);
+  ajustes?: Record<string, number>;
+  // vidas extras do último animal vivo;
+  vidasExtras?: number;
+  // animais que caem antes da primeira luta;
+  baixas?: number;
+  // terrenos escolhidos para o duelo final.
+  terrenos?: Habitat[];
 };
 
 export type ResultadoBatalha = {
@@ -75,6 +97,8 @@ export type Lutador = {
   veneno: number;
   // Já foi anunciada a última resistência.
   resistencia: boolean;
+  // Bênçãos e maldições do time (roleta da sorte).
+  bonus: number;
 };
 
 export type Contexto = {
@@ -84,10 +108,20 @@ export type Contexto = {
   condicao: Habitat | null;
 };
 
-export function criarLutador(codigo: string, time: number): Lutador {
+export function criarLutador(codigo: string, time: number, bonus = 0): Lutador {
   const p = buscarPersonagem(codigo);
   if (!p) throw new Error(`Personagem ${codigo} não existe`);
-  return { codigo, time, p, vivo: true, atacou: false, esquivou: false, veneno: 0, resistencia: false };
+  return {
+    codigo,
+    time,
+    p,
+    vivo: true,
+    atacou: false,
+    esquivou: false,
+    veneno: 0,
+    resistencia: false,
+    bonus,
+  };
 }
 
 // Probabilidade exata de A vencer: Força = 0,8 × Poder + 0,2 × dado (1 a 10).
@@ -107,7 +141,7 @@ export function chanceDeVitoria(poderA: number, poderB: number) {
 }
 
 function temAlcancaVoadores(l: Lutador) {
-  return l.p.habilidade?.efeito.tipo === 'alcancaVoadores';
+  return l.p.habilidade?.efeito.tipo === "alcancaVoadores";
 }
 
 function sozinhoNoTime(l: Lutador, todos: Lutador[]) {
@@ -123,27 +157,30 @@ export function alcanca(a: Lutador, b: Lutador, ctx: Contexto) {
 
 // Zonas possíveis do duelo: o habitat em comum ou, sem ele, o habitat de quem é atacado.
 export function zonasDoDuelo(a: Lutador, b: Lutador, ctx: Contexto): Zona[] {
-  if (ctx.final) return ['neutra'];
+  if (ctx.final) return ["neutra"];
   const comuns = a.p.habitats.filter((h) => b.p.habitats.includes(h));
   if (comuns.length > 0) return comuns;
   return b.p.habitats.filter(
-    (h) => (h === 'terra' && a.p.habitats.includes('ar')) || (h === 'ar' && temAlcancaVoadores(a)),
+    (h) =>
+      (h === "terra" && a.p.habitats.includes("ar")) ||
+      (h === "ar" && temAlcancaVoadores(a)),
   );
 }
 
-// Poder efetivo = Poder + zona + habilidades + última resistência + condição final − veneno.
+// Poder efetivo = Poder + zona + habilidades + última resistência + condição final
+// + bênçãos/maldições − veneno.
 export function poderEfetivo(
   l: Lutador,
   oponente: Lutador,
   zona: Zona,
-  papel: 'atacante' | 'alvo',
+  papel: "atacante" | "alvo",
   ctx: Contexto,
   todos: Lutador[],
 ) {
   let poder = l.p.poder;
   const usadas: string[] = [];
 
-  if (zona !== 'neutra') poder += l.p.habitats.includes(zona) ? 1 : -2;
+  if (zona !== "neutra") poder += l.p.habitats.includes(zona) ? 1 : -2;
 
   const ultimo = sozinhoNoTime(l, todos);
   if (ultimo) poder += 1;
@@ -153,34 +190,36 @@ export function poderEfetivo(
   }
 
   poder -= l.veneno;
+  poder += l.bonus;
 
   const habilidade = l.p.habilidade;
   if (habilidade) {
     const efeito = habilidade.efeito;
     let bonus = 0;
     switch (efeito.tipo) {
-      case 'primeiroAtaque':
-        if (papel === 'atacante' && !l.atacou) bonus = efeito.valor;
+      case "primeiroAtaque":
+        if (papel === "atacante" && !l.atacou) bonus = efeito.valor;
         break;
-      case 'quandoAtacado':
-        if (papel === 'alvo') bonus = efeito.valor;
+      case "quandoAtacado":
+        if (papel === "alvo") bonus = efeito.valor;
         break;
-      case 'contraHabitat':
+      case "contraHabitat":
         if (oponente.p.habitats.includes(efeito.habitat)) bonus = efeito.valor;
         break;
-      case 'contraPersonagens':
+      case "contraPersonagens":
         if (efeito.codigos.includes(oponente.codigo)) bonus = efeito.valor;
         break;
-      case 'extraNaAgua':
-        if (zona === 'agua') bonus = efeito.valor;
+      case "extraNaAgua":
+        if (zona === "agua") bonus = efeito.valor;
         break;
-      case 'ultimoDoTime':
+      case "ultimoDoTime":
         if (ultimo) bonus = efeito.valor;
         break;
-      case 'aPartirDoRound3':
-        if (ctx.final || (typeof ctx.round === 'number' && ctx.round >= 3)) bonus = efeito.valor;
+      case "aPartirDoRound3":
+        if (ctx.final || (typeof ctx.round === "number" && ctx.round >= 3))
+          bonus = efeito.valor;
         break;
-      case 'duelofinal':
+      case "duelofinal":
         if (ctx.final) bonus = efeito.valor;
         break;
     }
@@ -203,16 +242,27 @@ type Ataque = {
 };
 
 // O alvo alcançável com MAIOR chance de vitória (e a melhor zona para o atacante).
-export function melhorAtaque(a: Lutador, todos: Lutador[], ctx: Contexto): Ataque | null {
+export function melhorAtaque(
+  a: Lutador,
+  todos: Lutador[],
+  ctx: Contexto,
+): Ataque | null {
   let melhor: Ataque | null = null;
   for (const b of todos) {
     if (!b.vivo || b.time === a.time || !alcanca(a, b, ctx)) continue;
     for (const zona of zonasDoDuelo(a, b, ctx)) {
-      const pa = poderEfetivo(a, b, zona, 'atacante', ctx, todos);
-      const pb = poderEfetivo(b, a, zona, 'alvo', ctx, todos);
+      const pa = poderEfetivo(a, b, zona, "atacante", ctx, todos);
+      const pb = poderEfetivo(b, a, zona, "alvo", ctx, todos);
       const chance = chanceDeVitoria(pa.poder, pb.poder);
       if (!melhor || chance > melhor.chance) {
-        melhor = { alvo: b, zona, chance, poderA: pa.poder, poderB: pb.poder, usadas: [...pa.usadas, ...pb.usadas] };
+        melhor = {
+          alvo: b,
+          zona,
+          chance,
+          poderA: pa.poder,
+          poderB: pb.poder,
+          usadas: [...pa.usadas, ...pb.usadas],
+        };
       }
     }
   }
@@ -228,7 +278,11 @@ function embaralhar<T>(lista: T[], aleatorio: Aleatorio) {
   return copia;
 }
 
-function evento(round: Round, tipo: TipoEvento, extra: Partial<Evento> = {}): Evento {
+function evento(
+  round: Round,
+  tipo: TipoEvento,
+  extra: Partial<Evento> = {},
+): Evento {
   return {
     round,
     tipo,
@@ -243,13 +297,23 @@ function evento(round: Round, tipo: TipoEvento, extra: Partial<Evento> = {}): Ev
   };
 }
 
-export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): ResultadoBatalha {
-  const todos = times.flatMap((t) => t.codigos.map((c) => criarLutador(c, t.jogadorId)));
+export function simularBatalha(
+  times: TimeBatalha[],
+  aleatorio: Aleatorio,
+): ResultadoBatalha {
+  const todos = times.flatMap((t) =>
+    t.codigos.map((c) =>
+      criarLutador(c, t.jogadorId, (t.bonus ?? 0) + (t.ajustes?.[c] ?? 0)),
+    ),
+  );
+  const vidas: Record<number, number> = {};
+  for (const t of times) vidas[t.jogadorId] = t.vidasExtras ?? 0;
   const eventos: Evento[] = [];
   const eliminacao: Record<number, Round> = {};
   const ctx: Contexto = { round: 1, final: false, condicao: null };
 
-  for (const t of times) if (t.codigos.length === 0) eliminacao[t.jogadorId] = 0;
+  for (const t of times)
+    if (t.codigos.length === 0) eliminacao[t.jogadorId] = 0;
 
   const vivos = () => todos.filter((l) => l.vivo);
   const timesVivos = () => [...new Set(vivos().map((l) => l.time))];
@@ -260,7 +324,12 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
     const ultimo = restantes[0];
     if (restantes.length !== 1 || ultimo.resistencia) return;
     ultimo.resistencia = true;
-    eventos.push(evento(ctx.round, 'ultima_resistencia', { atacante: ultimo.codigo, time }));
+    eventos.push(
+      evento(ctx.round, "ultima_resistencia", {
+        atacante: ultimo.codigo,
+        time,
+      }),
+    );
   }
 
   function atacar(a: Lutador, ataque: Ataque) {
@@ -268,11 +337,11 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
     const habB = b.p.habilidade;
 
     // Esquiva: o 1º ataque recebido falha; para o atacante conta como o 1º ataque dele.
-    if (habB?.efeito.tipo === 'esquivaPrimeiroAtaque' && !b.esquivou) {
+    if (habB?.efeito.tipo === "esquivaPrimeiroAtaque" && !b.esquivou) {
       b.esquivou = true;
       a.atacou = true;
       eventos.push(
-        evento(ctx.round, 'esquiva', {
+        evento(ctx.round, "esquiva", {
           zona: ataque.zona,
           atacante: a.codigo,
           alvo: b.codigo,
@@ -293,20 +362,38 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
     const atacanteVence = forcaA > forcaB;
     const vencedor = atacanteVence ? a : b;
     const perdedor = atacanteVence ? b : a;
+    const poderVencedor = atacanteVence ? ataque.poderA : ataque.poderB;
+    const poderPerdedor = atacanteVence ? ataque.poderB : ataque.poderA;
+
+    // Vida extra: o último animal do time perde o duelo, mas continua de pé.
+    if (vidas[perdedor.time] > 0 && sozinhoNoTime(perdedor, todos)) {
+      vidas[perdedor.time] -= 1;
+      eventos.push(
+        evento(ctx.round, "vida_extra", {
+          zona: ataque.zona,
+          atacante: a.codigo,
+          alvo: b.codigo,
+          poder: [ataque.poderA, ataque.poderB],
+          habilidades_usadas: [...new Set(ataque.usadas)],
+          zebra: poderVencedor < poderPerdedor,
+          time: perdedor.time,
+          salvo: perdedor.codigo,
+        }),
+      );
+      return;
+    }
     perdedor.vivo = false;
 
     const usadas = [...ataque.usadas];
     // Veneno: quem sobreviver a um duelo com o venenoso perde Poder até o fim.
     const habP = perdedor.p.habilidade;
-    if (habP?.efeito.tipo === 'veneno') {
+    if (habP?.efeito.tipo === "veneno") {
       vencedor.veneno += habP.efeito.valor;
       usadas.push(habP.texto);
     }
 
-    const poderVencedor = atacanteVence ? ataque.poderA : ataque.poderB;
-    const poderPerdedor = atacanteVence ? ataque.poderB : ataque.poderA;
     eventos.push(
-      evento(ctx.round, 'duelo', {
+      evento(ctx.round, "duelo", {
         zona: ataque.zona,
         atacante: a.codigo,
         alvo: b.codigo,
@@ -321,6 +408,20 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
       eliminacao[perdedor.time] = ctx.round;
     } else {
       anunciarResistencia(perdedor.time);
+    }
+  }
+
+  // Maldição "Baixa Antes da Luta": um animal sorteado cai antes de tudo
+  // (nunca o último do time).
+  for (const t of times) {
+    for (let i = 0; i < (t.baixas ?? 0); i++) {
+      const doTime = todos.filter((l) => l.vivo && l.time === t.jogadorId);
+      if (doTime.length <= 1) break;
+      const caido = doTime[Math.floor(aleatorio() * doTime.length)];
+      caido.vivo = false;
+      eventos.push(
+        evento(1, "baixa", { eliminado: caido.codigo, time: t.jogadorId }),
+      );
     }
   }
 
@@ -345,13 +446,31 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
 
   // Duelo final: zona neutra, todos se alcançam e todos atacam.
   if (timesVivos().length > 1) {
-    ctx.round = 'final';
+    ctx.round = "final";
     ctx.final = true;
-    eventos.push(evento('final', 'arena_fecha', { zona: 'neutra' }));
+    eventos.push(evento("final", "arena_fecha", { zona: "neutra" }));
 
-    const habitats = [...new Set(vivos().flatMap((l) => l.p.habitats))];
-    ctx.condicao = habitats[Math.floor(aleatorio() * habitats.length)];
-    eventos.push(evento('final', 'condicao_final', { zona: ctx.condicao }));
+    // Senhor da Arena: vale a escolha de quem ainda está vivo (se houver mais
+    // de uma, sorteia entre elas). Sem escolha, sorteia entre os habitats vivos.
+    const escolhas = times
+      .filter((t) => timesVivos().includes(t.jogadorId))
+      .flatMap((t) =>
+        (t.terrenos ?? []).map((terreno) => ({ terreno, time: t.jogadorId })),
+      );
+    if (escolhas.length > 0) {
+      const escolha = escolhas[Math.floor(aleatorio() * escolhas.length)];
+      ctx.condicao = escolha.terreno;
+      eventos.push(
+        evento("final", "condicao_final", {
+          zona: ctx.condicao,
+          time: escolha.time,
+        }),
+      );
+    } else {
+      const habitats = [...new Set(vivos().flatMap((l) => l.p.habitats))];
+      ctx.condicao = habitats[Math.floor(aleatorio() * habitats.length)];
+      eventos.push(evento("final", "condicao_final", { zona: ctx.condicao }));
+    }
 
     for (let volta = 0; volta < 100 && timesVivos().length > 1; volta++) {
       for (const a of embaralhar(vivos(), aleatorio)) {
@@ -364,7 +483,7 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
 
   const restantes = timesVivos();
   const vencedor = restantes.length === 1 ? restantes[0] : null;
-  eventos.push(evento(ctx.round, 'vencedor', { time: vencedor }));
+  eventos.push(evento(ctx.round, "vencedor", { time: vencedor }));
 
   return {
     eventos,
@@ -377,7 +496,11 @@ export function simularBatalha(times: TimeBatalha[], aleatorio: Aleatorio): Resu
 }
 
 // Chance de cada time antes da luta: % de vitórias em 2.000 simulações.
-export function calcularChances(times: TimeBatalha[], simulacoes = SIMULACOES, semente = 2026) {
+export function calcularChances(
+  times: TimeBatalha[],
+  simulacoes = SIMULACOES,
+  semente = 2026,
+) {
   const aleatorio = criarAleatorio(semente);
   const vitorias: Record<number, number> = {};
   for (const t of times) vitorias[t.jogadorId] = 0;
@@ -386,6 +509,7 @@ export function calcularChances(times: TimeBatalha[], simulacoes = SIMULACOES, s
     if (vencedor !== null) vitorias[vencedor] += 1;
   }
   const chances: Record<number, number> = {};
-  for (const t of times) chances[t.jogadorId] = vitorias[t.jogadorId] / simulacoes;
+  for (const t of times)
+    chances[t.jogadorId] = vitorias[t.jogadorId] / simulacoes;
   return chances;
 }

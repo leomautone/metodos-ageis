@@ -17,7 +17,7 @@ function jogador(id: number, saldo: number, time: string[]): Jogador {
 }
 
 function partida(jogadores: Jogador[], repescagem: string[]): Partida {
-  return { jogadores, indiceAtual: 9, repescagem, vendas: [], repescagemSorteada: false, batalha: null };
+  return { jogadores, indiceAtual: 9, repescagem, vendas: [], repescagemSorteada: false, sorte: {}, batalha: null };
 }
 
 describe('ordem da repescagem', () => {
