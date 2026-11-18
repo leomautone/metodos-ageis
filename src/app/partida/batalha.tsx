@@ -138,6 +138,15 @@ export default function Batalha() {
 
       <View style={[styles.rodape, { paddingBottom: bottom + 12 }]}>
         {narrador.ativo ? (
+          <Text style={styles.vozAtual}>
+            {narrador.preparando
+              ? "Preparando a voz…"
+              : narrador.modo === "ia"
+                ? "🎙 Voz de IA"
+                : "🎙 Voz do celular"}
+          </Text>
+        ) : null}
+        {narrador.ativo ? (
           <View style={styles.controles}>
             <Controle
               rotulo={narrador.pausado ? "▶ Continuar" : "⏸ Pausar"}
@@ -318,6 +327,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: 4,
+  },
+  vozAtual: {
+    fontFamily: fontes.numero,
+    fontSize: 11,
+    letterSpacing: 0.8,
+    color: cores.textoSuave,
+    textAlign: "center",
+    textTransform: "uppercase",
   },
   controleTexto: {
     fontFamily: fontes.textoMedio,

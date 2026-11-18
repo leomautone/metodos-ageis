@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 import { VoiceQuality, type Voice } from 'expo-speech';
 
 import { qualidadeDaVoz, vozAutomatica, vozesEmPortugues } from '../voz';
+import { textoParaIA } from '../vozIA';
 
 const v = (identifier: string, name: string, language = 'pt-BR', quality = VoiceQuality.Default): Voice => ({
   identifier,
@@ -40,5 +41,12 @@ describe('vozes do narrador', () => {
   it('a escolha automática nunca é uma voz robótica', () => {
     expect(vozAutomatica(vozesEmPortugues(vozes))).toBe('com.apple.voice.premium.pt-BR.Luciana');
     expect(vozAutomatica(vozesEmPortugues([vozes[0]]))).toBeUndefined();
+  });
+});
+
+describe('texto da voz de IA', () => {
+  it('nos combates, o FORA! vem no mesmo áudio, depois de uma pausa', () => {
+    expect(textoParaIA({ texto: 'O Leão vence.' })).toBe('O Leão vence.');
+    expect(textoParaIA({ texto: 'O Leão vence.', fora: 'Puma' })).toBe('O Leão vence. ... Puma... FORA!');
   });
 });

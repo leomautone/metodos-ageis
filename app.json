@@ -35,7 +35,8 @@
           "recordAudioAndroid": false
         }
       ],
-      "expo-image"
+      "expo-image",
+      "expo-audio"
     ],
     "scheme": "allindraft",
     "backgroundColor": "#15131C",

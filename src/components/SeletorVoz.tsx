@@ -1,5 +1,5 @@
 import * as Speech from "expo-speech";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Modal,
   Pressable,
@@ -18,6 +18,7 @@ import {
   type Qualidade,
   type VozPt,
 } from "@/batalha/voz";
+import { TocadorIA, VOZ_IA, vozIADisponivel } from "@/batalha/vozIA";
 import { Botao } from "@/components/Botao";
 import { cores, fontes } from "@/theme";
 
@@ -62,6 +63,9 @@ export function SeletorVoz({ visivel, onFechar }: Props) {
 function Janela({ onFechar }: { onFechar: () => void }) {
   const [vozes, setVozes] = useState<VozPt[] | null>(null);
   const [testando, setTestando] = useState<string | null>(null);
+  // A voz de IA está ligada no servidor e há internet? (null = verificando)
+  const [iaOk, setIaOk] = useState<boolean | null>(null);
+  const tocador = useRef<TocadorIA | null>(null);
   const escolhida = useVozEscolhida();
 
   useEffect(() => {
@@ -69,17 +73,35 @@ function Janela({ onFechar }: { onFechar: () => void }) {
     buscarVozes().then((lista) => {
       if (vivo) setVozes(lista);
     });
+    vozIADisponivel().then((ok) => {
+      if (vivo) setIaOk(ok);
+    });
     return () => {
       vivo = false;
+      tocador.current?.limpar();
     };
   }, []);
 
   function atualizar() {
     setVozes(null);
+    setIaOk(null);
     buscarVozes().then(setVozes);
+    vozIADisponivel().then(setIaOk);
+  }
+
+  function testarIA() {
+    Speech.stop();
+    if (!tocador.current) tocador.current = new TocadorIA();
+    setTestando(VOZ_IA);
+    const fim = () => setTestando((t) => (t === VOZ_IA ? null : t));
+    tocador.current.tocar(FRASE_TESTE, fim, () => {
+      fim();
+      setIaOk(false);
+    });
   }
 
   function testar(v: VozPt) {
+    tocador.current?.pararAtual();
     Speech.stop();
     setTestando(v.id);
     Speech.speak(FRASE_TESTE, {
@@ -101,9 +123,9 @@ function Janela({ onFechar }: { onFechar: () => void }) {
       <View style={styles.janela}>
         <Text style={styles.titulo}>Voz do narrador</Text>
         <Text style={styles.dica}>
-          Toque em Testar para ouvir e escolha a melhor. Para ter vozes
-          melhores, baixe a Luciana ou o Felipe em Ajustes → Acessibilidade →
-          Ler e Falar → Vozes → Português (Brasil) e toque em Atualizar lista.
+          Toque em Testar para ouvir e escolha a melhor. A Voz de IA é a mais
+          natural e precisa de internet; sem ela, o narrador usa a voz do
+          celular.
         </Text>
 
         <ScrollView
@@ -123,12 +145,32 @@ function Janela({ onFechar }: { onFechar: () => void }) {
             <Linha
               nome="Automática"
               detalhe={
-                automatica
-                  ? `Agora: ${automatica.nome} (${automatica.qualidade})`
-                  : "A melhor disponível"
+                iaOk
+                  ? "Voz de IA; sem internet, a melhor do celular"
+                  : automatica
+                    ? `Agora: ${automatica.nome} (${automatica.qualidade})`
+                    : "A melhor disponível"
               }
               ativa={escolhida === null}
               onEscolher={() => escolherVoz(null)}
+            />
+          ) : null}
+
+          {vozes ? (
+            <Linha
+              nome="Voz de IA (ElevenLabs)"
+              detalhe={
+                iaOk === null
+                  ? "Verificando…"
+                  : iaOk
+                    ? "A mais natural · precisa de internet"
+                    : "Indisponível: sem internet ou sem a chave no servidor"
+              }
+              corDetalhe={iaOk === false ? cores.erro : cores.dourado}
+              ativa={escolhida === VOZ_IA}
+              testando={testando === VOZ_IA}
+              onTestar={iaOk ? testarIA : undefined}
+              onEscolher={() => escolherVoz(VOZ_IA)}
             />
           ) : null}
 
@@ -166,6 +208,7 @@ type LinhaProps = {
   nome: string;
   qualidade?: Qualidade;
   detalhe: string;
+  corDetalhe?: string;
   ativa: boolean;
   testando?: boolean;
   onTestar?: () => void;
@@ -176,6 +219,7 @@ function Linha({
   nome,
   qualidade,
   detalhe,
+  corDetalhe,
   ativa,
   testando,
   onTestar,
@@ -194,7 +238,10 @@ function Linha({
           <Text style={styles.nome} numberOfLines={1}>
             {nome}
           </Text>
-          <Text style={styles.detalhe} numberOfLines={1}>
+          <Text
+            style={[styles.detalhe, corDetalhe ? { color: corDetalhe } : null]}
+            numberOfLines={2}
+          >
             {qualidade ? (
               <Text style={{ color: COR_QUALIDADE[qualidade] }}>
                 {qualidade} ·{" "}

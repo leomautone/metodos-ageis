@@ -10,7 +10,7 @@ import { nome, saiDaBatalha, type Bloco } from "./narracao";
 
 export const URL_NARRACAO =
   "https://all-in-draft-narracao.vercel.app/api/narrar";
-const SENHA_APP = "all-in-draft-ap2";
+export const SENHA_APP = "all-in-draft-ap2";
 export const TEMPO_LIMITE_MS = 90_000;
 
 export type NarracaoIA = {
