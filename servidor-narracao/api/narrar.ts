@@ -11,6 +11,8 @@ import { z } from 'zod';
 export const maxDuration = 120;
 
 const MODELO = 'claude-opus-5-5';
+// O mesmo modelo, com o nome que o AI Gateway da Vercel usa.
+const MODELO_GATEWAY = 'anthropic/claude-opus-5.5';
 // Senha simples que o app manda: não é segredo de verdade (fica dentro do app),
 // só evita que qualquer pessoa que ache o endereço gaste a chave sem querer.
 const SENHA_APP = 'all-in-draft-ap2';
@@ -141,9 +143,49 @@ export function OPTIONS() {
   return new Response(null, { status: 204, headers: CORS });
 }
 
+// Por onde pedir o texto: primeiro o AI Gateway da Vercel (créditos da conta da
+// Vercel, sem chave: o servidor usa o token OIDC da própria Vercel); se falhar,
+// a API da Anthropic direto, quando houver ANTHROPIC_API_KEY.
+type Via = { nome: string; client: Anthropic; modelo: string };
+
+function tokenDoGateway(request: Request) {
+  return process.env.AI_GATEWAY_API_KEY || request.headers.get('x-vercel-oidc-token') || process.env.VERCEL_OIDC_TOKEN;
+}
+
+function vias(request: Request): Via[] {
+  const lista: Via[] = [];
+  const token = tokenDoGateway(request);
+  if (token) {
+    lista.push({
+      nome: 'gateway',
+      client: new Anthropic({ apiKey: token, baseURL: 'https://ai-gateway.vercel.sh', maxRetries: 0, timeout: 85_000 }),
+      modelo: process.env.MODELO_GATEWAY || MODELO_GATEWAY,
+    });
+  }
+  if (process.env.ANTHROPIC_API_KEY) {
+    lista.push({ nome: 'anthropic', client: new Anthropic({ maxRetries: 1, timeout: 85_000 }), modelo: MODELO });
+  }
+  return lista;
+}
+
+async function pedirNarracao(via: Via, roteiro: z.infer<typeof Roteiro>, comEsforco: boolean) {
+  const params = {
+    model: via.modelo,
+    max_tokens: 16000,
+    output_config: comEsforco
+      ? { effort: 'low', format: { type: 'json_schema', schema: SCHEMA_RESPOSTA } }
+      : { format: { type: 'json_schema', schema: SCHEMA_RESPOSTA } },
+    system: SISTEMA,
+    messages: [{ role: 'user', content: `Narre esta batalha. Roteiro em JSON:
+${JSON.stringify(roteiro)}` }],
+  };
+  return via.client.messages.create(params as unknown as Anthropic.MessageCreateParamsNonStreaming);
+}
+
 export async function POST(request: Request) {
   if (request.headers.get('x-all-in-draft') !== SENHA_APP) return erro(401, 'Não autorizado.');
-  if (!process.env.ANTHROPIC_API_KEY) return erro(503, 'A chave da IA ainda não foi configurada no servidor.');
+  const caminhos = vias(request);
+  if (caminhos.length === 0) return erro(503, 'A IA ainda não foi configurada no servidor.');
 
   const corpo = await request.text();
   if (corpo.length > LIMITE_BYTES) return erro(413, 'Roteiro grande demais.');
@@ -155,35 +197,36 @@ export async function POST(request: Request) {
     return erro(400, 'Roteiro inválido.');
   }
 
-  const client = new Anthropic();
-  try {
-    const resposta = await client.beta.messages.create({
-      model: MODELO,
-      max_tokens: 16000,
-      betas: ['server-side-fallback-2026-07-01'],
-      fallbacks: 'default',
-      output_config: { effort: 'low', format: { type: 'json_schema', schema: SCHEMA_RESPOSTA } },
-      system: SISTEMA,
-      messages: [
-        {
-          role: 'user',
-          content: `Narre esta batalha. Roteiro em JSON:\n${JSON.stringify(roteiro)}`,
-        },
-      ],
-    });
+  const falhas: string[] = [];
+  for (const via of caminhos) {
+    try {
+      let resposta: Anthropic.Message;
+      try {
+        resposta = await pedirNarracao(via, roteiro, true);
+      } catch (e) {
+        // Se o caminho não aceitar o ajuste de esforço, tenta sem ele.
+        if (e instanceof Anthropic.BadRequestError) resposta = await pedirNarracao(via, roteiro, false);
+        else throw e;
+      }
 
-    if (resposta.stop_reason === 'refusal') return erro(502, 'A IA recusou narrar esta batalha.');
-    if (resposta.stop_reason === 'max_tokens') return erro(502, 'A narração ficou longa demais.');
-
-    const texto = resposta.content.find((b) => b.type === 'text');
-    if (!texto || texto.type !== 'text') return erro(502, 'A IA não devolveu texto.');
-    const narracao = Resposta.parse(JSON.parse(texto.text));
-    return Response.json({ modelo: resposta.model, ...narracao }, { headers: CORS });
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) return erro(503, 'A chave da IA é inválida.');
-    if (e instanceof Anthropic.RateLimitError) return erro(429, 'A IA está ocupada; tente de novo.');
-    if (e instanceof Anthropic.APIError) return erro(502, `Erro da IA (${e.status}).`);
-    if (e instanceof z.ZodError || e instanceof SyntaxError) return erro(502, 'A IA devolveu um formato inesperado.');
-    throw e;
+      if (resposta.stop_reason === 'refusal') throw new Error('a IA recusou narrar');
+      if (resposta.stop_reason === 'max_tokens') throw new Error('a narração ficou longa demais');
+      const texto = resposta.content.find((b) => b.type === 'text');
+      if (!texto || texto.type !== 'text') throw new Error('a IA não devolveu texto');
+      const narracao = Resposta.parse(JSON.parse(texto.text));
+      return Response.json({ modelo: resposta.model, via: via.nome, ...narracao }, { headers: CORS });
+    } catch (e) {
+      const motivo =
+        e instanceof Anthropic.APIError
+          ? `erro ${e.status}`
+          : e instanceof z.ZodError || e instanceof SyntaxError
+            ? 'formato inesperado'
+            : e instanceof Error
+              ? e.message
+              : 'erro desconhecido';
+      console.error(`narrar via ${via.nome}: ${motivo}`, e instanceof Anthropic.APIError ? e.message : '');
+      falhas.push(`${via.nome}: ${motivo}`);
+    }
   }
+  return erro(502, `A IA não conseguiu narrar (${falhas.join('; ')}).`);
 }

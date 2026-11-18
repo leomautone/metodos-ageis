@@ -1,4 +1,5 @@
 import { createAudioPlayer, setAudioModeAsync, type AudioPlayer } from 'expo-audio';
+import { Platform } from 'react-native';
 
 import type { Bloco } from './narracao';
 import { SENHA_APP } from './narracaoIA';
@@ -42,15 +43,33 @@ function prepararModoDeAudio() {
   });
 }
 
+// No celular (Expo Go) a senha vai no cabeçalho.
 function fonte(texto: string) {
   return { uri: `${URL_VOZ}?t=${encodeURIComponent(texto)}`, headers: { 'x-all-in-draft': SENHA_APP } };
 }
 
-// Toca os trechos um a um; o próximo trecho já vai carregando enquanto o atual toca.
-export class TocadorIA {
+// No navegador, o <audio> não manda cabeçalhos próprios: a senha vai no endereço.
+export function urlWeb(texto: string) {
+  return `${URL_VOZ}?t=${encodeURIComponent(texto)}&k=${SENHA_APP}`;
+}
+
+type Tocador = {
+  destravar(texto: string): void;
+  preparar(texto: string): void;
+  tocar(texto: string, aoTerminar: () => void, aoFalhar: () => void): void;
+  pausar(): void;
+  continuar(): void;
+  pararAtual(): void;
+  limpar(): void;
+};
+
+// Celular: um player por trecho; o próximo já vai carregando enquanto o atual toca.
+class TocadorNativo implements Tocador {
   private preparados = new Map<string, AudioPlayer>();
   private atual: AudioPlayer | null = null;
   private relogio: ReturnType<typeof setTimeout> | null = null;
+
+  destravar() {}
 
   preparar(texto: string) {
     prepararModoDeAudio();
@@ -109,5 +128,136 @@ export class TocadorIA {
     this.pararAtual();
     this.preparados.forEach((p) => p.remove());
     this.preparados.clear();
+  }
+}
+
+// Navegador: UM só <audio>, que troca de trecho. O Safari do iPhone só deixa
+// tocar som começado por um toque; depois disso, o mesmo elemento segue liberado.
+class TocadorWeb implements Tocador {
+  private el: HTMLAudioElement | null = null;
+  private textoAtual: string | null = null;
+  private relogio: ReturnType<typeof setTimeout> | null = null;
+  private soltar: (() => void) | null = null;
+
+  private elemento() {
+    if (!this.el) {
+      this.el = new Audio();
+      this.el.preload = 'auto';
+    }
+    return this.el;
+  }
+
+  // Chamado direto no toque: já começa a tocar este trecho.
+  destravar(texto: string) {
+    const el = this.elemento();
+    this.textoAtual = texto;
+    el.src = urlWeb(texto);
+    el.play().catch(() => {});
+  }
+
+  // Pede o trecho seguinte antes da hora: ele fica no cache e toca sem espera.
+  preparar(texto: string) {
+    fetch(urlWeb(texto)).catch(() => {});
+  }
+
+  tocar(texto: string, aoTerminar: () => void, aoFalhar: () => void) {
+    this.soltarEventos();
+    const el = this.elemento();
+    let feito = false;
+    const encerrar = (falhou: boolean) => {
+      if (feito) return;
+      feito = true;
+      this.soltarEventos();
+      if (falhou) aoFalhar();
+      else aoTerminar();
+    };
+    const fim = () => encerrar(false);
+    const erro = () => encerrar(true);
+    const pronto = () => {
+      if (this.relogio) clearTimeout(this.relogio);
+      this.relogio = null;
+    };
+    el.addEventListener('ended', fim);
+    el.addEventListener('error', erro);
+    el.addEventListener('canplay', pronto);
+    this.soltar = () => {
+      el.removeEventListener('ended', fim);
+      el.removeEventListener('error', erro);
+      el.removeEventListener('canplay', pronto);
+    };
+    this.relogio = setTimeout(() => {
+      this.relogio = null;
+      if (el.readyState < 3) encerrar(true);
+    }, TEMPO_CARREGAR_MS);
+
+    // O trecho que o toque já começou: só acompanha até o fim.
+    if (this.textoAtual === texto && !el.error) {
+      if (el.ended) setTimeout(fim, 0);
+      return;
+    }
+    this.textoAtual = texto;
+    el.src = urlWeb(texto);
+    el.play().catch((e: unknown) => {
+      // Sem permissão para tocar (o navegador bloqueou): vai para a voz do aparelho.
+      if (e instanceof Error && e.name === 'NotAllowedError') encerrar(true);
+    });
+  }
+
+  pausar() {
+    this.el?.pause();
+  }
+
+  continuar() {
+    this.el?.play().catch(() => {});
+  }
+
+  private soltarEventos() {
+    if (this.relogio) clearTimeout(this.relogio);
+    this.relogio = null;
+    this.soltar?.();
+    this.soltar = null;
+  }
+
+  pararAtual() {
+    this.soltarEventos();
+    this.el?.pause();
+    this.textoAtual = null;
+  }
+
+  limpar() {
+    this.pararAtual();
+  }
+}
+
+// Toca os trechos da narração com a voz de IA (escolhe o jeito certo para celular ou navegador).
+export class TocadorIA implements Tocador {
+  private impl: Tocador = Platform.OS === 'web' ? new TocadorWeb() : new TocadorNativo();
+
+  destravar(texto: string) {
+    this.impl.destravar(texto);
+  }
+
+  preparar(texto: string) {
+    this.impl.preparar(texto);
+  }
+
+  tocar(texto: string, aoTerminar: () => void, aoFalhar: () => void) {
+    this.impl.tocar(texto, aoTerminar, aoFalhar);
+  }
+
+  pausar() {
+    this.impl.pausar();
+  }
+
+  continuar() {
+    this.impl.continuar();
+  }
+
+  pararAtual() {
+    this.impl.pararAtual();
+  }
+
+  limpar() {
+    this.impl.limpar();
   }
 }

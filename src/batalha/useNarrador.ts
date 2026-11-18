@@ -175,10 +175,16 @@ export function useNarrador(
     const escolhida = vozEscolhida();
     let usarIA = false;
     if (escolhida === null || escolhida === VOZ_IA) {
+      // No navegador, o som só pode começar no próprio toque: o 1º trecho já
+      // começa a tocar aqui, antes de esperar a internet (no celular, nada muda).
+      if (!tocador.current) tocador.current = new TocadorIA();
+      const primeiro = deps.current.blocosDaPagina(pagina)[0];
+      if (primeiro) tocador.current.destravar(textoParaIA(primeiro));
       setPreparando(true);
       usarIA = await vozIADisponivel();
       if (minha !== sessao.current) return;
       setPreparando(false);
+      if (!usarIA) tocador.current.pararAtual();
     }
     modoRef.current = usarIA ? 'ia' : 'aparelho';
     setModo(modoRef.current);
