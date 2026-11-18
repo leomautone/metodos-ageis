@@ -2,6 +2,7 @@ import { describe, expect, it } from '@jest/globals';
 
 import { criarAleatorio, simularBatalha, type Evento } from '../motor';
 import { narrarRound } from '../narracao';
+import { textoParaFala } from '../useNarrador';
 
 const base: Evento = {
   round: 1,
@@ -89,5 +90,11 @@ describe('narração épica', () => {
     expect(foras).toBe(eventos.filter((e) => e.tipo === 'duelo').length);
     const { vencedor } = simularBatalha(times, criarAleatorio(11));
     expect(narrar().at(-1)?.texto).toContain(`time de J${vencedor}`);
+  });
+});
+
+describe('texto para a voz', () => {
+  it('passa palavras em maiúsculas para minúsculas (a voz não soletra)', () => {
+    expect(textoParaFala('O DUELO FINAL! Leão-africano FORA!')).toBe('O duelo final! Leão-africano fora!');
   });
 });
