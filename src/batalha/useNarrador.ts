@@ -3,6 +3,7 @@ import * as Speech from 'expo-speech';
 import { useEffect, useRef, useState } from 'react';
 
 import type { Bloco } from './narracao';
+import { vozAutomatica, vozEscolhida, vozesEmPortugues } from './voz';
 
 // Narrador em voz alta: lê a batalha bloco a bloco com a voz do aparelho
 // (pt-BR, sem internet), faz uma pausa dramática antes de cada "FORA!" e passa
@@ -28,16 +29,6 @@ export function textoParaFala(texto: string) {
     .join(' ');
 }
 
-// A melhor voz em português do Brasil instalada (Premium > Aprimorada > padrão).
-function escolherVoz(vozes: Speech.Voice[]) {
-  const pt = vozes.filter((v) => v.language?.replace('_', '-').toLowerCase().startsWith('pt-br'));
-  return (
-    pt.find((v) => /premium/i.test(v.identifier)) ??
-    pt.find((v) => v.quality === Speech.VoiceQuality.Enhanced) ??
-    pt[0]
-  )?.identifier;
-}
-
 export function useNarrador(
   blocosDaPagina: (pagina: number) => Bloco[],
   totalPaginas: number,
@@ -59,7 +50,7 @@ export function useNarrador(
     let vivo = true;
     Speech.getAvailableVoicesAsync()
       .then((vozes) => {
-        if (vivo) voz.current = escolherVoz(vozes);
+        if (vivo) voz.current = vozAutomatica(vozesEmPortugues(vozes));
       })
       .catch(() => {});
     return () => {
@@ -81,7 +72,8 @@ export function useNarrador(
   function falar(minha: number, texto: string, tom: Tom, depois: () => void) {
     Speech.speak(textoParaFala(texto), {
       language: 'pt-BR',
-      voice: voz.current,
+      // A voz que o grupo escolheu; sem escolha, a melhor que não seja robótica.
+      voice: vozEscolhida() ?? voz.current,
       rate: tom.rate,
       pitch: tom.pitch,
       // Sessão de áudio própria: toca mesmo com outros sons e mistura bem.
