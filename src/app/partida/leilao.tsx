@@ -1,269 +1,325 @@
 import { router } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Botao } from '@/components/Botao';
-import { HabitatTag } from '@/components/HabitatTag';
-import { Painel } from '@/components/Painel';
+import { Cabecalho } from '@/components/Cabecalho';
+import { Cronometro } from '@/components/Cronometro';
+import { GradeJogadores } from '@/components/GradeJogadores';
+import { ImagemPersonagem } from '@/components/ImagemPersonagem';
+import { LeitorQR } from '@/components/LeitorQR';
+import { Roleta } from '@/components/Roleta';
+import { Rotulo } from '@/components/Rotulo';
+import { SeletorValor } from '@/components/SeletorValor';
+import { normalizarCodigo } from '@/data/formatar';
 import { buscarPersonagem } from '@/data/personagens';
 import {
-  encerrarPersonagem,
-  lanceMinimo,
+  aplicarVenda,
+  cartaSemLance,
+  conferirCarta,
   leilaoConcluido,
-  podeDarLance,
-  TEMPO_APOS_LANCE_MS,
-  TEMPO_INICIAL_MS,
-  vagas,
-  type Lance,
+  MAX_REPESCAGEM,
+  podeComprar,
+  TEMPO_LEILAO_MS,
+  totalLeiloes,
+  vendaObrigatoria,
+  venderCarta,
 } from '@/partida/leilao';
-import { formatarReais, salvarPartida, usePartida, type Partida, type Venda } from '@/partida/partida';
+import {
+  buscarJogador,
+  formatarReais,
+  salvarPartida,
+  usePartida,
+  type Jogador,
+  type Venda,
+} from '@/partida/partida';
 import { cores, fontes } from '@/theme';
 
-// Leilão (SCRUM-21): personagem da vez, cronômetro 15 s / 5 s, lances,
-// saldo de cada jogador e registro do vencedor e do valor.
+// Leilão (SCRUM-21): o leilão acontece na mesa, com cartas e moedas de verdade.
+// O app marca 20 s; quando o tempo acaba, registra a carta (QR ou código),
+// quem levou e por quanto.
 export default function Leilao() {
   const partida = usePartida();
-  const [lance, setLance] = useState<Lance | null>(null);
-  const [valor, setValor] = useState(0);
+  const { bottom } = useSafeAreaInsets();
+  const [fase, setFase] = useState<'relogio' | 'registro'>('relogio');
   const [fimEm, setFimEm] = useState<number | null>(null);
   const [agora, setAgora] = useState(Date.now());
-  const [resultado, setResultado] = useState<Venda | null>(null);
+  const [codigo, setCodigo] = useState<string | null>(null);
+  const [erroCarta, setErroCarta] = useState<string | null>(null);
+  const [digitando, setDigitando] = useState(false);
+  const [texto, setTexto] = useState('');
+  const [comprador, setComprador] = useState<number | null>(null);
+  const [valor, setValor] = useState(0);
+  // Sem lance com a repescagem cheia: mostra para quem vai antes de confirmar.
+  const [obrigatorio, setObrigatorio] = useState<Venda | null>(null);
+  // Sem lance, repescagem cheia e empate em vagas: a roleta decide entre esses jogadores.
+  const [roleta, setRoleta] = useState<number[] | null>(null);
+  const [aviso, setAviso] = useState<string | null>(null);
 
-  // Atualiza o cronômetro várias vezes por segundo enquanto ele corre.
+  // Atualiza o relógio várias vezes por segundo enquanto ele corre.
   useEffect(() => {
     if (fimEm === null) return;
-    const intervalo = setInterval(() => setAgora(Date.now()), 200);
+    const intervalo = setInterval(() => setAgora(Date.now()), 100);
     return () => clearInterval(intervalo);
   }, [fimEm]);
 
-  const restanteMs = fimEm === null ? TEMPO_INICIAL_MS : Math.max(0, fimEm - agora);
-
+  // Tempo esgotado: passa para o registro.
   useEffect(() => {
     if (fimEm !== null && agora >= fimEm) encerrar();
   });
 
-  if (!partida) {
+  const concluido = partida !== null && leilaoConcluido(partida);
+  const sobrouRepescagem = (partida?.repescagem.length ?? 0) > 0;
+  useEffect(() => {
+    if (concluido) router.replace(sobrouRepescagem ? '/partida/repescagem' : '/partida/times');
+  }, [concluido, sobrouRepescagem]);
+
+  if (!partida || concluido) {
     return (
-      <View style={[styles.tela, styles.conteudo]}>
-        <Text style={styles.texto}>Nenhuma partida em andamento.</Text>
-        <Botao titulo="Nova partida" onPress={() => router.replace('/partida/nova')} />
+      <View style={styles.tela}>
+        <Cabecalho titulo="Leilão" />
+        {!partida ? (
+          <View style={styles.vazio}>
+            <Text style={styles.legenda}>Nenhuma partida em andamento.</Text>
+            <Botao titulo="Nova partida" onPress={() => router.replace('/partida/nova')} />
+          </View>
+        ) : null}
       </View>
     );
   }
 
-  function iniciar() {
-    setAgora(Date.now());
-    setFimEm(Date.now() + TEMPO_INICIAL_MS);
-  }
+  const correndo = fimEm !== null;
+  const restanteMs = correndo ? Math.max(0, fimEm - agora) : TEMPO_LEILAO_MS;
+  const segundos = Math.ceil(restanteMs / 1000);
+  const carta = codigo ? buscarPersonagem(codigo) : undefined;
+  const quem = buscarJogador(partida, comprador);
+  const vendaValida = !!carta && !!quem && podeComprar(quem, valor);
 
-  function darLance(jogadorId: number) {
-    const valorLance = Math.max(valor, lanceMinimo(lance));
-    setLance({ jogadorId, valor: valorLance });
-    setValor(valorLance + 1);
-    // Cada lance novo reinicia o cronômetro em 5 s.
+  function iniciar() {
+    setAviso(null);
     setAgora(Date.now());
-    setFimEm(Date.now() + TEMPO_APOS_LANCE_MS);
+    setFimEm(Date.now() + TEMPO_LEILAO_MS);
   }
 
   function encerrar() {
-    if (!partida) return;
-    const fechado = encerrarPersonagem(partida, lance);
     setFimEm(null);
-    setResultado(fechado.venda);
-    salvarPartida(fechado.partida);
+    setFase('registro');
   }
 
-  function proximo() {
-    setResultado(null);
-    setLance(null);
+  function lerCarta(lido: string) {
+    if (!partida) return;
+    const c = normalizarCodigo(lido);
+    const erro = conferirCarta(partida, c);
+    setErroCarta(erro);
+    setCodigo(erro ? null : c);
+  }
+
+  function digitar(valorDigitado: string) {
+    setTexto(valorDigitado);
+    if (valorDigitado.trim().length >= 2) lerCarta(valorDigitado);
+    else setErroCarta(null);
+  }
+
+  function escolherComprador(j: Jogador) {
+    setComprador(j.id);
+    setValor((v) => Math.min(v, j.saldo));
+  }
+
+  function limpar(mensagem: string) {
+    setFase('relogio');
+    setCodigo(null);
+    setErroCarta(null);
+    setDigitando(false);
+    setTexto('');
+    setComprador(null);
     setValor(0);
+    setObrigatorio(null);
+    setRoleta(null);
+    setAviso(mensagem);
   }
 
-  if (resultado) {
-    return <Resultado partida={partida} venda={resultado} onProximo={proximo} />;
+  function registrar(venda: Venda) {
+    if (!partida) return;
+    const nova = aplicarVenda(partida, venda);
+    salvarPartida(nova);
+    const nome = buscarPersonagem(venda.codigo)?.nome;
+    const dono = buscarJogador(nova, venda.jogadorId)?.nome;
+    limpar(
+      venda.jogadorId === null
+        ? `${nome} ficou sem lance e foi para a repescagem (${nova.repescagem.length}/${MAX_REPESCAGEM}).`
+        : `${nome} foi para ${dono} por ${formatarReais(venda.valor)}.`,
+    );
   }
 
-  if (leilaoConcluido(partida)) {
-    return <Resumo partida={partida} />;
+  function confirmarVenda() {
+    if (!codigo || !quem || !vendaValida) return;
+    registrar(venderCarta(codigo, quem.id, valor));
   }
 
-  const p = buscarPersonagem(partida.fila[partida.indiceAtual])!;
-  const correndo = fimEm !== null;
-  const minimo = lanceMinimo(lance);
-  const segundos = Math.ceil(restanteMs / 1000);
-  const lider = partida.jogadores.find((j) => j.id === lance?.jogadorId);
+  function semLance() {
+    if (!partida || !codigo) return;
+    const resultado = cartaSemLance(partida, codigo);
+    if (resultado.tipo === 'roleta') setRoleta(resultado.candidatos);
+    // Repescagem cheia: mostra para quem a carta vai antes de confirmar.
+    else if (resultado.venda.tipo === 'obrigatorio') setObrigatorio(resultado.venda);
+    else registrar(resultado.venda);
+  }
+
+  const total = totalLeiloes(partida);
+  const donoObrigatorio = obrigatorio ? buscarJogador(partida, obrigatorio.jogadorId) : undefined;
+  const naRoleta = roleta ? partida.jogadores.filter((j) => roleta.includes(j.id)) : [];
 
   return (
-    <ScrollView style={styles.tela} contentContainerStyle={styles.conteudo}>
-      <Text style={styles.posicao}>
-        Personagem {partida.indiceAtual + 1} de {partida.fila.length} · repescagem{' '}
-        {partida.repescagem.length}/3
-      </Text>
+    <View style={styles.tela}>
+      <Cabecalho titulo="Leilão" subtitulo={`Leilão ${partida.indiceAtual + 1} de ${total}`} />
 
-      <Painel style={styles.carta}>
-        <Text style={styles.codigo}>{p.codigo}</Text>
-        <Text style={styles.nome}>{p.nome}</Text>
-        <View style={styles.habitats}>
-          {p.habitats.map((h) => (
-            <HabitatTag key={h} habitat={h} />
-          ))}
-        </View>
-        <Pressable
-          onPress={() => router.push({ pathname: '/personagens/[codigo]', params: { codigo: p.codigo } })}
-        >
-          <Text style={styles.link}>ver atributos e habilidade</Text>
-        </Pressable>
-      </Painel>
+      <ScrollView contentContainerStyle={styles.conteudo} keyboardShouldPersistTaps="handled">
+        {fase === 'relogio' ? (
+          <>
+            {aviso ? (
+              <View style={styles.aviso}>
+                <Text style={styles.avisoTexto}>{aviso}</Text>
+              </View>
+            ) : null}
 
-      <View style={styles.placar}>
-        <View style={styles.placarItem}>
-          <Text style={styles.rotulo}>TEMPO</Text>
-          <Text style={[styles.relogio, correndo && segundos <= 3 && styles.relogioUrgente]}>
-            {segundos}s
-          </Text>
-        </View>
-        <View style={styles.placarItem}>
-          <Text style={styles.rotulo}>LANCE ATUAL</Text>
-          <Text style={styles.lanceValor}>{lance ? formatarReais(lance.valor) : '—'}</Text>
-          <Text style={styles.lanceNome}>{lider ? lider.nome : 'sem lances'}</Text>
-        </View>
-      </View>
-
-      {!correndo ? (
-        <Botao titulo="Iniciar cronômetro" detalhe="15 segundos" onPress={iniciar} />
-      ) : (
-        <>
-          <Painel style={styles.bloco}>
-            <Text style={styles.titulo}>Valor do lance</Text>
-            <View style={styles.seletor}>
-              <Pressable
-                onPress={() => setValor(Math.max(minimo, valor - 1))}
-                style={styles.passo}
-                hitSlop={6}
-              >
-                <Text style={styles.passoTexto}>−</Text>
-              </Pressable>
-              <Text style={styles.valor}>{formatarReais(Math.max(valor, minimo))}</Text>
-              <Pressable onPress={() => setValor(Math.max(valor, minimo) + 1)} style={styles.passo} hitSlop={6}>
-                <Text style={styles.passoTexto}>+</Text>
-              </Pressable>
+            <View style={styles.relogio}>
+              <Cronometro
+                segundos={segundos}
+                fracao={restanteMs / TEMPO_LEILAO_MS}
+                urgente={correndo && segundos <= 5}
+                tamanho={200}
+              />
+              <Text style={styles.chamada}>
+                {correndo ? 'Lances na mesa!' : 'Vire a próxima carta e comece o relógio.'}
+              </Text>
+              <Text style={styles.legenda}>
+                Quando o tempo acabar, registre a carta, quem levou e por quanto.
+              </Text>
             </View>
-            <Text style={styles.ajuda}>Toque no jogador que deu o lance.</Text>
-          </Painel>
-          <Botao titulo="Bater o martelo" detalhe="encerrar agora" onPress={encerrar} />
-        </>
-      )}
 
-      <Painel style={styles.bloco}>
-        <Text style={styles.titulo}>Jogadores</Text>
-        {partida.jogadores.map((j) => {
-          const valido = correndo && podeDarLance(j, Math.max(valor, minimo), lance);
-          const liderando = j.id === lance?.jogadorId;
-          return (
-            <Pressable
-              key={j.id}
-              disabled={!valido}
-              onPress={() => darLance(j.id)}
-              style={({ pressed }) => [
-                styles.jogador,
-                liderando && styles.jogadorLider,
-                valido && styles.jogadorValido,
-                pressed && styles.jogadorPressionado,
-              ]}
-            >
-              <View style={styles.flex}>
-                <Text style={styles.jogadorNome}>{j.nome}</Text>
-                <Text style={styles.ajuda}>
-                  {vagas(j) === 0 ? 'time completo' : `${vagas(j)} vaga(s)`}
+            <Rotulo>Jogadores</Rotulo>
+            <GradeJogadores jogadores={partida.jogadores} />
+          </>
+        ) : (
+          <>
+            <Text style={styles.esgotado}>Tempo esgotado!</Text>
+
+            <Rotulo>1. Qual carta?</Rotulo>
+            {carta ? (
+              <View style={styles.carta}>
+                <ImagemPersonagem codigo={carta.codigo} style={styles.imagem} />
+                <View style={styles.flex}>
+                  <Text style={styles.nome} numberOfLines={2}>
+                    {carta.nome}
+                  </Text>
+                  <Text style={styles.codigo}>{carta.codigo}</Text>
+                </View>
+                <Pressable
+                  onPress={() => {
+                    setCodigo(null);
+                    setTexto('');
+                    setObrigatorio(null);
+                  }}
+                  accessibilityRole="button"
+                  hitSlop={8}
+                >
+                  <Text style={styles.link}>Trocar</Text>
+                </Pressable>
+              </View>
+            ) : (
+              <>
+                <LeitorQR onLer={lerCarta} style={styles.camera} />
+                {erroCarta ? <Text style={styles.erro}>{erroCarta}</Text> : null}
+                {digitando ? (
+                  <TextInput
+                    value={texto}
+                    onChangeText={digitar}
+                    placeholder="Código da carta, ex.: ANI-011"
+                    placeholderTextColor={cores.textoApagado}
+                    autoCapitalize="characters"
+                    autoCorrect={false}
+                    autoFocus
+                    style={styles.campo}
+                  />
+                ) : (
+                  <Pressable onPress={() => setDigitando(true)} accessibilityRole="button" hitSlop={8}>
+                    <Text style={[styles.link, styles.centro]}>QR não leu? Digitar o código</Text>
+                  </Pressable>
+                )}
+              </>
+            )}
+
+            {obrigatorio && donoObrigatorio ? (
+              <View style={styles.aviso}>
+                <Text style={styles.avisoTexto}>
+                  Repescagem cheia: {carta?.nome} vai para {donoObrigatorio.nome}, que tem mais vagas, por{' '}
+                  {formatarReais(obrigatorio.valor)}.
                 </Text>
               </View>
-              <Text style={styles.saldo}>{formatarReais(j.saldo)}</Text>
-            </Pressable>
-          );
-        })}
-      </Painel>
-    </ScrollView>
-  );
-}
+            ) : (
+              <>
+                <Rotulo>2. Quem levou?</Rotulo>
+                <GradeJogadores
+                  jogadores={partida.jogadores}
+                  selecionado={comprador}
+                  onSelecionar={escolherComprador}
+                />
 
-function Resultado({ partida, venda, onProximo }: { partida: Partida; venda: Venda; onProximo: () => void }) {
-  const p = buscarPersonagem(venda.codigo)!;
-  const nome = (id: number) => partida.jogadores.find((j) => j.id === id)!.nome;
-  const ultimo = leilaoConcluido(partida);
+                <Rotulo>3. Por quanto?</Rotulo>
+                <SeletorValor valor={valor} maximo={quem?.saldo} onMudar={setValor} />
+                {quem ? (
+                  <Text style={styles.legenda}>
+                    Saldo de {quem.nome}: {formatarReais(quem.saldo)} → {formatarReais(quem.saldo - valor)}
+                  </Text>
+                ) : null}
+              </>
+            )}
+          </>
+        )}
+      </ScrollView>
 
-  let titulo: string;
-  let detalhe: string;
-  if (venda.tipo === 'lance') {
-    titulo = `Vendido para ${nome(venda.jogadorId!)}`;
-    detalhe = venda.valor === 0 ? 'Lance de R$ 0 sem disputa: leva de graça.' : `por ${formatarReais(venda.valor)}`;
-  } else if (venda.tipo === 'repescagem') {
-    titulo = 'Sem lance';
-    detalhe = `Vai para a repescagem (${partida.repescagem.length}/3).`;
-  } else {
-    titulo = `Sem lance → ${nome(venda.jogadorId!)}`;
-    detalhe = `Repescagem cheia: vai para quem tem mais vagas, por ${formatarReais(venda.valor)}.`;
-  }
+      <Roleta
+        visivel={!!roleta && !!codigo}
+        carta={carta?.nome ?? ''}
+        motivo="Repescagem cheia e empate em vagas"
+        jogadores={naRoleta}
+        valor={(j) => (codigo ? vendaObrigatoria(partida, codigo, j.id).valor : 0)}
+        onConfirmar={(id) => codigo && registrar(vendaObrigatoria(partida, codigo, id))}
+        onCancelar={() => setRoleta(null)}
+      />
 
-  return (
-    <ScrollView style={styles.tela} contentContainerStyle={styles.conteudo}>
-      <Painel style={styles.carta}>
-        <Text style={styles.codigo}>{p.codigo}</Text>
-        <Text style={styles.nome}>{p.nome}</Text>
-        <Text style={styles.martelo}>{titulo}</Text>
-        <Text style={styles.texto}>{detalhe}</Text>
-        {venda.dados ? (
-          <View style={styles.dados}>
-            <Text style={styles.ajuda}>Desempate no dado (menor fica com ele):</Text>
-            {Object.entries(venda.dados).map(([id, valores]) => (
-              <Text key={id} style={styles.texto}>
-                {nome(Number(id))}: {valores.join(' → ')}
-              </Text>
-            ))}
-          </View>
-        ) : null}
-      </Painel>
-      <Botao titulo={ultimo ? 'Ver times' : 'Próximo personagem'} onPress={onProximo} />
-    </ScrollView>
-  );
-}
-
-function Resumo({ partida }: { partida: Partida }) {
-  return (
-    <ScrollView style={styles.tela} contentContainerStyle={styles.conteudo}>
-      <Text style={styles.martelo}>Leilão encerrado</Text>
-      {partida.jogadores.map((j) => (
-        <Painel key={j.id} style={styles.bloco}>
-          <View style={styles.linha}>
-            <Text style={[styles.titulo, styles.flex]}>{j.nome}</Text>
-            <Text style={styles.saldo}>{formatarReais(j.saldo)}</Text>
-          </View>
-          {j.time.length === 0 ? <Text style={styles.ajuda}>Nenhum personagem ainda.</Text> : null}
-          {j.time.map((codigo) => {
-            const venda = partida.vendas.find((v) => v.codigo === codigo)!;
-            return (
-              <View key={codigo} style={styles.linha}>
-                <Text style={styles.codigo}>{codigo}</Text>
-                <Text style={[styles.texto, styles.flex, styles.esquerda]}>{buscarPersonagem(codigo)!.nome}</Text>
-                <Text style={styles.ajuda}>{formatarReais(venda.valor)}</Text>
-              </View>
-            );
-          })}
-        </Painel>
-      ))}
-      {partida.repescagem.length > 0 ? (
-        <Painel style={styles.bloco}>
-          <Text style={styles.titulo}>Repescagem</Text>
-          {partida.repescagem.map((codigo) => (
-            <View key={codigo} style={styles.linha}>
-              <Text style={styles.codigo}>{codigo}</Text>
-              <Text style={[styles.texto, styles.flex, styles.esquerda]}>{buscarPersonagem(codigo)!.nome}</Text>
-            </View>
-          ))}
-          <Text style={styles.ajuda}>A distribuição da repescagem chega na próxima versão.</Text>
-        </Painel>
-      ) : null}
-      <Botao titulo="Voltar ao início" onPress={() => router.dismissTo('/')} />
-    </ScrollView>
+      <View style={[styles.rodape, { paddingBottom: bottom + 16 }]}>
+        {fase === 'relogio' ? (
+          correndo ? (
+            <Botao titulo="Encerrar agora" variante="secundario" onPress={encerrar} style={styles.flex} />
+          ) : (
+            <Botao titulo="Começar 20 s" onPress={iniciar} style={styles.flex} />
+          )
+        ) : obrigatorio ? (
+          <>
+            <Botao titulo="Confirmar" onPress={() => registrar(obrigatorio)} style={styles.flex} />
+            <Botao
+              titulo="Cancelar"
+              variante="secundario"
+              onPress={() => setObrigatorio(null)}
+              style={styles.secundario}
+            />
+          </>
+        ) : (
+          <>
+            <Botao titulo="Confirmar venda" onPress={confirmarVenda} desativado={!vendaValida} style={styles.flex} />
+            <Botao
+              titulo="Sem lance"
+              variante="secundario"
+              onPress={semLance}
+              desativado={!carta}
+              style={styles.secundario}
+            />
+          </>
+        )}
+      </View>
+    </View>
   );
 }
 
@@ -272,184 +328,123 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: cores.fundo,
   },
-  conteudo: {
-    padding: 16,
-    gap: 14,
-    paddingBottom: 40,
-  },
   flex: {
     flex: 1,
   },
-  linha: {
-    flexDirection: 'row',
+  vazio: {
+    padding: 24,
+    gap: 16,
+  },
+  conteudo: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 12,
+    gap: 14,
+  },
+  relogio: {
     alignItems: 'center',
     gap: 10,
+    paddingVertical: 12,
   },
-  posicao: {
-    fontFamily: fontes.textoForte,
+  chamada: {
+    fontFamily: fontes.titulo,
+    fontSize: 18,
+    color: cores.douradoClaro,
+    textAlign: 'center',
+    marginTop: 6,
+  },
+  legenda: {
+    fontFamily: fontes.texto,
     fontSize: 12,
     color: cores.textoSuave,
     textAlign: 'center',
+  },
+  aviso: {
+    backgroundColor: cores.painelClaro,
+    borderColor: cores.habitat.ar,
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    gap: 6,
+  },
+  avisoTexto: {
+    fontFamily: fontes.textoMedio,
+    fontSize: 13,
+    color: cores.texto,
+    textAlign: 'center',
+  },
+  esgotado: {
+    fontFamily: fontes.titulo,
+    fontSize: 20,
+    color: cores.douradoClaro,
+    textAlign: 'center',
+  },
+  camera: {
+    height: 260,
+    borderRadius: 14,
+  },
+  erro: {
+    fontFamily: fontes.textoMedio,
+    fontSize: 13,
+    color: cores.erro,
+    textAlign: 'center',
+  },
+  link: {
+    fontFamily: fontes.textoMedio,
+    fontSize: 13,
+    color: cores.douradoClaro,
+  },
+  centro: {
+    textAlign: 'center',
+  },
+  campo: {
+    height: 44,
+    backgroundColor: cores.painel,
+    borderColor: cores.douradoEscuro,
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    color: cores.texto,
+    fontFamily: fontes.numero,
+    fontSize: 16,
     letterSpacing: 1,
   },
   carta: {
+    flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 22,
-    gap: 6,
+    gap: 12,
+    padding: 10,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: cores.dourado,
+    backgroundColor: cores.painel,
   },
-  codigo: {
-    fontFamily: fontes.numero,
-    fontSize: 14,
-    color: cores.dourado,
-    letterSpacing: 1,
+  imagem: {
+    width: 64,
+    height: 64,
+    borderRadius: 10,
   },
   nome: {
     fontFamily: fontes.titulo,
-    fontSize: 24,
-    color: cores.douradoClaro,
-    textAlign: 'center',
-  },
-  habitats: {
-    flexDirection: 'row',
-    gap: 6,
-    marginTop: 4,
-  },
-  link: {
-    fontFamily: fontes.texto,
-    fontSize: 13,
-    color: cores.dourado,
-    textDecorationLine: 'underline',
-    marginTop: 6,
-  },
-  placar: {
-    flexDirection: 'row',
-    gap: 12,
-  },
-  placarItem: {
-    flex: 1,
-    alignItems: 'center',
-    backgroundColor: cores.painel,
-    borderColor: cores.dourado,
-    borderWidth: 1,
-    borderRadius: 6,
-    paddingVertical: 12,
-  },
-  rotulo: {
-    fontFamily: fontes.textoForte,
-    fontSize: 11,
-    color: cores.textoSuave,
-    letterSpacing: 2,
-  },
-  relogio: {
-    fontFamily: fontes.numero,
-    fontSize: 44,
-    color: cores.douradoClaro,
-  },
-  relogioUrgente: {
-    color: '#E07A6A',
-  },
-  lanceValor: {
-    fontFamily: fontes.numero,
-    fontSize: 30,
-    color: cores.douradoClaro,
-    marginTop: 6,
-  },
-  lanceNome: {
-    fontFamily: fontes.texto,
-    fontSize: 13,
-    color: cores.texto,
-  },
-  bloco: {
-    gap: 10,
-  },
-  titulo: {
-    fontFamily: fontes.titulo,
-    fontSize: 16,
-    color: cores.dourado,
-  },
-  seletor: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 20,
-  },
-  passo: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    borderColor: cores.dourado,
-    borderWidth: 2,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  passoTexto: {
-    fontFamily: fontes.numero,
-    fontSize: 22,
-    color: cores.douradoClaro,
-  },
-  valor: {
-    fontFamily: fontes.numero,
-    fontSize: 30,
-    color: cores.douradoClaro,
-    minWidth: 110,
-    textAlign: 'center',
-  },
-  ajuda: {
-    fontFamily: fontes.texto,
-    fontSize: 12,
-    color: cores.textoSuave,
-  },
-  jogador: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    borderColor: cores.desativado,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 12,
-    opacity: 0.6,
-  },
-  jogadorValido: {
-    borderColor: cores.dourado,
-    opacity: 1,
-  },
-  jogadorLider: {
-    backgroundColor: '#3A3220',
-    borderColor: cores.douradoClaro,
-    opacity: 1,
-  },
-  jogadorPressionado: {
-    backgroundColor: cores.dourado,
-  },
-  jogadorNome: {
-    fontFamily: fontes.textoForte,
-    fontSize: 15,
-    color: cores.texto,
-  },
-  saldo: {
-    fontFamily: fontes.numero,
     fontSize: 17,
     color: cores.douradoClaro,
   },
-  martelo: {
-    fontFamily: fontes.titulo,
-    fontSize: 20,
-    color: cores.dourado,
-    textAlign: 'center',
-    marginTop: 10,
+  codigo: {
+    fontFamily: fontes.numero,
+    fontSize: 13,
+    letterSpacing: 0.78,
+    color: cores.textoSuave,
+    marginTop: 2,
   },
-  texto: {
-    fontFamily: fontes.texto,
-    fontSize: 14,
-    color: cores.texto,
-    textAlign: 'center',
+  rodape: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 24,
+    paddingTop: 8,
   },
-  esquerda: {
-    textAlign: 'left',
-  },
-  dados: {
-    marginTop: 8,
-    alignItems: 'center',
-    gap: 2,
+  secundario: {
+    width: 124,
+    paddingHorizontal: 6,
   },
 });

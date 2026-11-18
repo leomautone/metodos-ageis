@@ -2,37 +2,41 @@ import { StyleSheet, View, type ViewProps } from 'react-native';
 
 import { cores } from '@/theme';
 
-// Painel com borda dourada e ornamentos nos quatro cantos, como nas cartas.
+// Painel com borda dourada e losangos nos quatro cantos, como nas cartas.
 export function Painel({ style, children, ...props }: ViewProps) {
   return (
     <View style={[styles.painel, style]} {...props}>
-      <View style={[styles.canto, styles.supEsq]} />
-      <View style={[styles.canto, styles.supDir]} />
-      <View style={[styles.canto, styles.infEsq]} />
-      <View style={[styles.canto, styles.infDir]} />
       {children}
+      <View style={[styles.losango, styles.supEsq]} />
+      <View style={[styles.losango, styles.supDir]} />
+      <View style={[styles.losango, styles.infEsq]} />
+      <View style={[styles.losango, styles.infDir]} />
     </View>
   );
 }
 
-const TAMANHO = 14;
+const LADO = 10;
+// Centro do losango exatamente sobre o canto do painel (a borda tem 1,5).
+const DESLOCAMENTO = -LADO / 2 - 1.5;
 
 const styles = StyleSheet.create({
   painel: {
     backgroundColor: cores.painel,
     borderColor: cores.dourado,
-    borderWidth: 1,
-    borderRadius: 6,
-    padding: 16,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    paddingHorizontal: 20,
+    paddingVertical: 16,
   },
-  canto: {
+  losango: {
     position: 'absolute',
-    width: TAMANHO,
-    height: TAMANHO,
-    borderColor: cores.douradoClaro,
+    width: LADO,
+    height: LADO,
+    backgroundColor: cores.dourado,
+    transform: [{ rotate: '45deg' }],
   },
-  supEsq: { top: 4, left: 4, borderTopWidth: 2, borderLeftWidth: 2 },
-  supDir: { top: 4, right: 4, borderTopWidth: 2, borderRightWidth: 2 },
-  infEsq: { bottom: 4, left: 4, borderBottomWidth: 2, borderLeftWidth: 2 },
-  infDir: { bottom: 4, right: 4, borderBottomWidth: 2, borderRightWidth: 2 },
+  supEsq: { top: DESLOCAMENTO, left: DESLOCAMENTO },
+  supDir: { top: DESLOCAMENTO, right: DESLOCAMENTO },
+  infEsq: { bottom: DESLOCAMENTO, left: DESLOCAMENTO },
+  infDir: { bottom: DESLOCAMENTO, right: DESLOCAMENTO },
 });
